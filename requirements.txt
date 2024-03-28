@@ -1,0 +1,6 @@
+numpy
+matplotlib
+svgwrite
+scipy
+svgpathtools
+ipykernel
