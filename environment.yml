@@ -1,0 +1,11 @@
+name: solver
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - numpy
+  - matplotlib
+  - svgwrite
+  - scipy
+  - svgpathtools
+  - ipykernel
