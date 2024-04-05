@@ -1,0 +1,3 @@
+[submodule "lib/piecemaker"]
+	path = lib/piecemaker
+	url = https://github.com/jkenlooper/piecemaker.git

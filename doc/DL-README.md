@@ -2,7 +2,7 @@
 
 ## Overview
 
-PATCH-Net (**P**uzzle **A**ssembly by **T**ransformers and **C**NN **H**ybrid Network) utilizes a pre-trained CNN backbone for feature extraction, an optional method for dimensionality reduction of the CNNs latent space, and a subsequent Transformer architecture with 2D/3D Learnable Fourier Features for spatial encoding. The model predicts the position and orientation of puzzle pieces, with three classification heads.
+**PATCH-Net** (**P**uzzle **A**ssembly by **T**ransformer and **C**NN **H**ybrid **Net**work) utilizes a pre-trained CNN backbone for feature extraction, an optional method for dimensionality reduction of the CNNs latent space, and a subsequent Transformer architecture with 2D/3D Learnable Fourier Features for spatial encoding. The model predicts the position and orientation of puzzle pieces, with three classification heads.
 
 ## Architecture
 
@@ -27,7 +27,7 @@ $$
 \mathcal{L}_{\text{total
 }} = \| \mathbf{Y}_{:,:,:2} - \mathbf{\hat{Y}}_{:,:,:2} \|_F^2 + \eta \mathcal{L}_{\text{CE}}(\mathbf{Y}_{:,:,2}, \mathbf{\hat{Y}}_{:,:,2})
 $$
-where $\eta \in \mathbb{R}$ is a hyperparameter.
+where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 
 ## Development Checklist / TODOs
 
@@ -40,13 +40,23 @@ where $\eta \in \mathbb{R}$ is a hyperparameter.
 - **Dimensionality Reduction**: May occur after the dense layer for enhanced performance.
 - **Unique Labels Check**: Ensures no repetition of puzzle piece positions.
 - **Beam Search**: To improve the decoder's predictions.
-- **Augmentation**: [Albumentations](https://albumentations.ai/)
-- **DL-Framework**: [PyTorch Lightning](https://www.pytorchlightning.ai/)
 
 ---
 
+## Third-Party Libraries
+
+### Jigsaw Puzzle Generation
+- [GitHub::piecemaker](https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file)
+- [location](lib/piecemaker) of the submodule
+- find further information (installation, usage, ...) in [DATA-PIECEMAKER.md](./DATA-PIECEMAKER.md)
+
+
+- **Data Augmentation**: [Albumentations](https://albumentations.ai/)
+- **DL-Framework**: [PyTorch Lightning](https://www.pytorchlightning.ai/)
+
 ## Literature & Resources
 
+- **Dataset**: [ImageNet](https://www.kaggle.com/c/imagenet-object-localization-challenge/data)
 - [Learnable Fourier Features for Spatially Encoded Transformers](https://arxiv.org/pdf/2106.02795v1)
 - [Jigsaw-ViT: Learning jigsaw puzzles in vision transformer](https://www.sciencedirect.com/science/article/pii/S0167865522003920), [GitHub](https://github.com/yingyichen-cyy/JigsawViT/tree/master)
 - [Attention is All You Need](https://arxiv.org/abs/1706.03762)
