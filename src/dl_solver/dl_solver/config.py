@@ -20,8 +20,8 @@ class YamlBaseModel(BaseModel):
 
 
 class Paths(YamlBaseModel):
-    root: Path = Field(default_factory=lambda: Path(__file__).parents[4].resolve())
-    data: Annotated[Path, Field(default=".data", validate_default=True)]
+    root: Path = Field(default_factory=lambda: Path(__file__).parents[5].resolve())
+    data: Annotated[Path, Field(default=".data/imagenet", validate_default=True)]
     checkpoints: Annotated[
         Path, Field(default="src/solver/.logs/checkpoints", validate_default=True)
     ]
@@ -37,7 +37,10 @@ class Paths(YamlBaseModel):
     def __convert_to_path(cls, v: str, info: ValidationInfo) -> Path:
         root = info.data.get("root")
         v = root / v if not Path(v).is_absolute() else Path(v)
-        v.mkdir(parents=True, exist_ok=True)
+        if v == "data":
+            assert v.exists(), f"Data directory {v} does not exist."
+        else:
+            v.mkdir(parents=True, exist_ok=True)
         return v.resolve()
 
     @field_validator("mlflow_uri")
