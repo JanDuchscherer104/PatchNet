@@ -4,9 +4,13 @@
 
 **PATCH-Net** (**P**uzzle **A**ssembly by **T**ransformer and **C**NN **H**ybrid **Net**work) utilizes a pre-trained CNN backbone for feature extraction, an optional method for dimensionality reduction of the CNNs latent space, and a subsequent Transformer architecture with 2D/3D Learnable Fourier Features for spatial encoding. The model predicts the position and orientation of puzzle pieces, with three classification heads.
 
+## Other MD Files
+- [TODO.md](TODO.md)
+- [DATA-PIECEMAKER.md](DATA-PIECEMAKER.md): Information about the submodule `piecemaker` for jigsaw puzzle generation, and the data structure of the original and puzzle-ized dataset.
+
 ## Architecture
 
-![patch-net.svg](.doc-assets/patch-net.svg)
+![patch-net.svg](./.doc-assets/patch-net.svg)
 
 - **Input**: Images represented as $\mathbf{X} \in \mathbb{R}^{L \times C_{\text{RGB}} \times H \times W}$
 - **CNN**: A fine-tuned backbone (ResNet, EfficientNet) for feature extraction.
@@ -31,9 +35,6 @@ $$
 $$
 where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 
-## Development Checklist / TODOs
-
-- [TODO.md](TODO.md)
 
 ## Considerations
 

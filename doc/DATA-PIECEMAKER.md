@@ -1,8 +1,10 @@
-# Piecemaker
+# Data-Piecemaker
+
+## Piecemaker
 - [GitHub::piecemaker](https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file)
 - [location](lib/piecemaker) of the submodule
 
-## Installation
+### Installation
 ```bash
 sudo apt-get -y install libspatialindex6
 sudo apt-get -y install optipng
@@ -12,7 +14,7 @@ cd lib/piecemaker
 pip install --upgrade --upgrade-strategy eager -e .
 ```
 
-## Folder Structure
+### Folder Structure
 
 - `index.json`: This file contains metadata about the puzzle, such as the total number of pieces, the puzzle's height and width, and the size of each piece.
     - `piece_cut_variant`: The style of the puzzle piece cuts.
@@ -58,3 +60,37 @@ pip install --upgrade --upgrade-strategy eager -e .
     - `raster`: Contains the N segemented pieces of the Jigsaw puzzle as `jpg` files.
 
     - `raster_with_padding`: Contains the N segemented pieces of the Jigsaw puzzle as `jpg` files with padding to rectangular shape.
+
+---
+
+## Original ImageNet Dataset
+can be found [here](https://www.kaggle.com/c/imagenet-object-localization-challenge/data)
+
+### Folder Structure
+1. **Class Labels**: The class labels are located in the `LOC_synset_mapping.txt` file. Each line in this file likely contains a class ID and its corresponding label. Example lines:
+    ```
+    n01440764 tench, Tinca tinca
+    n01443537 goldfish, Carassius auratus
+    n01484850 great white shark, white shark, man-eater, man-eating shark, Carcharodon carcharias
+    ```
+2. **Splits**: The `train`, `val` & `test` set images are located in `.data/imagenet/ILSVRC/Data/CLS-LOC/<split>`.
+    - `train-folder`: Contains the images in subfolders named after the class labels. For example, the first directory is `n01440764`, and contains images of tench fish. The labels are also provided via `.data/imagenet/LOC_train_solution.csv` - same format as the validation set.
+    - `val-folder`: Contains the images directly as `ILSVRC2012_val_<id>.JPEG`. The labels are located in `.data/imagenet/LOC_val_solution.csv` and look like this:
+        ```csv
+        ImageID                , PredictionString
+        ILSVRC2012_val_00008726,n02119789 255 142 454 329 n02119789 44 21 322 295
+                                <class id><BBX          > <class id><BBX        >
+        ```
+        This example contains two predictions of the same class.
+    - `test-folder`: Containes the images directly as `ILSVRC2012_test_<id>.JPEG`
+
+**Consideration**:
+- We should adhere to the dataset order as per the `Loc_<split>_solution.csv` files. Meaning: first line --> first sample
+- We should transfer the following information into our Jigsaw-Imagenet dataset:
+    - ImageID
+    - Class ID (s)
+    - Number of bbox predictions
+- We might onyl use the cropped bbox images for the Jigsaw puzzles. And maybe only those that have a certain minimum size.
+- In the Jigsaw-Imagenet dataset, we should store the separate pieces in a single file to avoid loading multiple files for each sample. consider formats: `HDF5` or `Parquet`.
+- We might even save multiple samples in a single file to simplify the data loading process.
+

@@ -13,6 +13,16 @@ $$
 (x, y,\varphi), \quad \text{where } x \in \{0, \ldots, M\},\: y \in \{0, \ldots, M\},\: \varphi \in \{k\cdot90|k \in{0,\ldots,3}\}
 $$
 
+### Imagenet
+- We should adhere to the dataset order as per the `Loc_<split>_solution.csv` files. Meaning: first line --> first sample
+- We should transfer the following information into our Jigsaw-Imagenet dataset:
+    - ImageID
+    - Class ID (s)
+    - Number of bbox predictions
+- We might onyl use the cropped bbox images for the Jigsaw puzzles. And maybe only those that have a certain minimum size.
+- In the Jigsaw-Imagenet dataset, we should store the separate pieces in a single file to avoid loading multiple files for each sample. consider formats: `HDF5` or `Parquet`.
+- We might even save multiple samples in a single file to simplify the data loading process.
+
 ---
 
 ## Model Research
