@@ -10,6 +10,8 @@
 
 - **Input**: Images represented as $\mathbf{X} \in \mathbb{R}^{L \times C_{\text{RGB}} \times H \times W}$
 - **CNN**: A fine-tuned backbone (ResNet, EfficientNet) for feature extraction.
+    - A good starting-point for model selection might be [An evaluation of pre-trained models for feature extraction in image classification
+](https://ar5iv.labs.arxiv.org/html/2310.02037), [Paper](https://arxiv.org/abs/2310.02037)
 - (optional) **Dimensionality Reduction**: PCA or Autoencoders reduce the feature space dimensionality.
 - **Transformer**:
   - Encoder processes features without positional embedding.
@@ -40,6 +42,7 @@ where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 - **Dimensionality Reduction**: May occur after the dense layer for enhanced performance.
 - **Unique Labels Check**: Ensures no repetition of puzzle piece positions.
 - **Beam Search**: To improve the decoder's predictions.
+- It might be a more straightforward approach to employ a pre-trained ViT model instead of a pre-trained CNN $\oplus$ custom Transformer architecture.
 
 ---
 
