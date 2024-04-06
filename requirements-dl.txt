@@ -1,0 +1,9 @@
+pydantic
+pydantic-yaml
+
+mlflow
+torch
+torchvision
+torchaudio
+pytorch-lightning
+torchmetrics
