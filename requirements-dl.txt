@@ -1,9 +1,12 @@
 pydantic
 pydantic-yaml
-
 mlflow
 torch
 torchvision
 torchaudio
 pytorch-lightning
 torchmetrics
+pandas
+swifter
+opencv-python
+numpy
