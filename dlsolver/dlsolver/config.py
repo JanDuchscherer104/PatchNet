@@ -122,3 +122,10 @@ class Config(YamlBaseModel):
         )
 
         return self
+
+
+class HyperParameters(YamlBaseModel):
+    learning_rate: float
+    batch_size: int
+    weight_decay: float
+    num_epochs: int
