@@ -39,7 +39,7 @@ where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 ## Considerations
 
 - **Data Representation**: $\mathbf{y} \in \{ 0, \ldots, N_{\max}\} \times\{ 0, \ldots, M_{\max}\} \times \{0, \ldots 3 \}$
-- **Concatenation/Addition in Transformer Decoder**: $ \widetilde{\mathbf{X}}^{<t>} \gets \widetilde{\mathbf{X}}^{<t-1>}_{:,:,:d_{\text{model}}} \oplus \mathbf{E}_{\text{P}}$
+- **Concatenation/Addition in Transformer Decoder**: $\widetilde{\mathbf{X}}^{\langle t\rangle} \gets \widetilde{\mathbf{X}}^{\langle t-1\rangle}_{:,:,:d_{\text{model}}} \oplus \mathbf{E}_{\text{P}}$
 - **Dimensionality Reduction**: May occur after the dense layer for enhanced performance.
 - **Unique Labels Check**: Ensures no repetition of puzzle piece positions.
 - **Beam Search**: To improve the decoder's predictions.
@@ -65,3 +65,6 @@ where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 - [Jigsaw-ViT: Learning jigsaw puzzles in vision transformer](https://www.sciencedirect.com/science/article/pii/S0167865522003920), [GitHub](https://github.com/yingyichen-cyy/JigsawViT/tree/master)
 - [Attention is All You Need](https://arxiv.org/abs/1706.03762)
 - [Intuition for Embeddings](https://www.youtube.com/watch?v=wjZofJX0v4M)
+
+---
+---
