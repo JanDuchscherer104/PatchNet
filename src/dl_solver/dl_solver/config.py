@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Literal, Optional, Type, TypeVar
+from typing import Dict, List, Literal, Optional, Type, TypeVar
 
 import mlflow
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
@@ -31,8 +31,14 @@ class Paths(YamlBaseModel):
     mlflow_uri: Annotated[
         str, Field(default="src/solver/.logs/mlflow_logs/mlflow", validate_default=True)
     ]
+    jigsaw_masks: Annotated[
+        Path, Field(default=".data/jigsaw/masks", validate_default=True)
+    ]
+    jigsaw_samples: Annotated[
+        Path, Field(default=".data/jigsaw/images", validate_default=True)
+    ]
 
-    @field_validator("data", "checkpoints", "tb_logs")
+    @field_validator("data", "checkpoints", "tb_logs", "jigsaw_masks", "jigsaw_samples")
     @classmethod
     def __convert_to_path(cls, v: str, info: ValidationInfo) -> Path:
         root = info.data.get("root")
@@ -62,6 +68,54 @@ class MLflowConfig(YamlBaseModel):
     experiment_name: str = "DL-EXP"
     run_name: str = Annotated[str, Field(default=None)]
     experiment_id: Annotated[str, Field(default=None)]
+
+
+class PiecemakerConfig(BaseModel):
+    out_dir: Path = Field(default=None, description="Directory to store the files in")
+    number_of_pieces: int = Field(12, description="Target count of pieces")  # 3 x 4
+    mask_dir: Path = Annotated[
+        Path,
+        Field(default=None, description="Path to the clips svg files"),
+    ]
+    minimum_piece_size: int = Field(
+        25,
+        description="""Minimum piece size. Will change the count of pieces to
+                        meet this if not set to 0.""",
+    )
+    maximum_piece_size: int = Field(
+        512,
+        description="""Maximum piece size. Will resize the image if not set
+                        to 0 and should be at least greater than double the
+                        set minimum piece size.""",
+    )
+    scaled_sizes: List[int] = Field(
+        [100],
+        description="""Comma separated list of sizes to scale for. Must
+                        include 100 at least. Any that are too small will not
+                        be created and a minimum scale will be done for the
+                        ones that were dropped. Example: 33,68,100,150 for 4
+                        scaled puzzles with the last one being at 150%.""",
+    )
+    use_max_size: bool = Field(
+        False, description="Use the largest size when creating the size-100 directory"
+    )
+    variant: Literal["interlockingnubs", "stochasticnubs"] = Field(
+        "interlockingnubs", description="Piece cut variant to use"
+    )
+    stochastic_nubs_probability: float = Field(0.5, description="Probability of nubs")
+    gap: bool = Field(True, description="Leave gap between pieces")
+
+    @model_validator(mode="after")
+    def __check_options(self) -> "PiecemakerConfig":
+        assert self.minimum_piece_size > 0
+        assert self.number_of_pieces > 0
+        assert self.minimum_piece_size > 1 and self.number_of_pieces > 1
+        assert 100 in self.scaled_sizes
+
+        # self.out_dir.mkdir(parents=True, exist_ok=True)
+        # self.mask_dir.mkdir(parents=True, exist_ok=True)
+
+        return self
 
 
 class Config(YamlBaseModel):
@@ -98,6 +152,7 @@ class Config(YamlBaseModel):
     }
     paths: Paths = Field(default_factory=Paths)
     mlflow_config: MLflowConfig = Field(default_factory=MLflowConfig)
+    piecemaker_config: PiecemakerConfig = Field(default_factory=PiecemakerConfig)
 
     @model_validator(mode="after")
     def __setup_mlflow(self) -> "Config":
@@ -123,6 +178,9 @@ class Config(YamlBaseModel):
         self.mlflow_config.run_name = (
             f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
         )
+
+        self.piecemaker_config.out_dir = self.paths.jigsaw_samples
+        self.piecemaker_config.mask_dir = self.paths.jigsaw_masks
 
         return self
 
