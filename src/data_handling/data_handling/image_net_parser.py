@@ -2,6 +2,7 @@ from pathlib import Path
 from typing import Literal
 
 import cv2
+import numpy as np
 import pandas as pd
 import swifter
 
@@ -54,9 +55,15 @@ class ImageNetParser:
             assert img_pth.exists(), f"Image {img_pth} does not exist."
             img = cv2.imread(str(img_pth))
             row["height"], row["width"] = img.shape[:2]
-            row["image"] = img
+            row["image_pieces"] = self.conv_to_jigsaw(img)
+
             return row
 
         df = df.swifter.apply(read_image, axis=1)
 
         return df
+
+    def conv_to_jigsaw(self, img: np.ndarray) -> np.ndarray:
+        # use piecemaker to conver the image to jigsaw elements
+        imgs = img
+        return imgs
