@@ -21,7 +21,9 @@ class YamlBaseModel(BaseModel):
 
 class Paths(YamlBaseModel):
     root: Path = Field(default_factory=lambda: Path(__file__).parents[5].resolve())
-    data: Annotated[Path, Field(default=".data/imagenet", validate_default=True)]
+    imagenet_dir: Annotated[
+        Path, Field(default=".data/imagenet", validate_default=True)
+    ]
     checkpoints: Annotated[
         Path, Field(default="src/solver/.logs/checkpoints", validate_default=True)
     ]
@@ -31,14 +33,14 @@ class Paths(YamlBaseModel):
     mlflow_uri: Annotated[
         str, Field(default="src/solver/.logs/mlflow_logs/mlflow", validate_default=True)
     ]
-    jigsaw_masks: Annotated[
-        Path, Field(default=".data/jigsaw/masks", validate_default=True)
-    ]
-    jigsaw_samples: Annotated[
-        Path, Field(default=".data/jigsaw/images", validate_default=True)
-    ]
+    jigsaw_dir: Annotated[Path, Field(default=".data/jigsaw", validate_default=True)]
 
-    @field_validator("data", "checkpoints", "tb_logs", "jigsaw_masks", "jigsaw_samples")
+    @field_validator(
+        "imagenet_dir",
+        "checkpoints",
+        "tb_logs",
+        "jigsaw_dir",
+    )
     @classmethod
     def __convert_to_path(cls, v: str, info: ValidationInfo) -> Path:
         root = info.data.get("root")
@@ -71,12 +73,10 @@ class MLflowConfig(YamlBaseModel):
 
 
 class PiecemakerConfig(BaseModel):
-    out_dir: Path = Field(default=None, description="Directory to store the files in")
+    jigsaw_dir: Path = Field(
+        default=None, description="Directory to store the files in"
+    )
     number_of_pieces: int = Field(12, description="Target count of pieces")  # 3 x 4
-    mask_dir: Path = Annotated[
-        Path,
-        Field(default=None, description="Path to the clips svg files"),
-    ]
     minimum_piece_size: int = Field(
         25,
         description="""Minimum piece size. Will change the count of pieces to
@@ -179,8 +179,7 @@ class Config(YamlBaseModel):
             f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
         )
 
-        self.piecemaker_config.out_dir = self.paths.jigsaw_samples
-        self.piecemaker_config.mask_dir = self.paths.jigsaw_masks
+        self.piecemaker_config.jigsaw_dir = self.paths.jigsaw_dir
 
         return self
 
