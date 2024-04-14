@@ -195,3 +195,4 @@ class HyperParameters(YamlBaseModel):
 
     puzzle_shape: Tuple[int, int] = (3, 4)
     segment_shape: Tuple[int, int] = (64, 64)
+    rotation_loss_weight: float = 0.1

@@ -95,7 +95,7 @@ class AlbumTransforms:
             dim=1,
         )
 
-        # Shuffle both tensors
+        # Shuffle both tensors along the pieces dimension
         indices = torch.randperm(transformed_pieces.size(0))
         transformed_pieces = transformed_pieces[indices]
         labels = labels[indices]

@@ -80,7 +80,7 @@ class JigsawDataset(Dataset):
         Returns
             Tuple[
                 X: torch.Tensor[torch.float32] - (num_pieces, 3, H, W)
-                y: torch.Tensor[torch.int64] - (num_pieces, 4) [id, row, col, rotation]
+                y: torch.Tensor[torch.int64] - (num_pieces, 3) [row_idx, col_idx, rotation]
                     row in {0, 1, ..., rows - 1}
                     col in {0, 1, ..., cols - 1}
                     rotation in {0, 1, 2, 3}
@@ -106,12 +106,19 @@ class JigsawDataset(Dataset):
 
         return self.transforms(puzzle_pieces, labels, self.is_train)
 
-    def plot_sample(self, idx: Optional[int] = None) -> None:
+    def plot_sample(
+        self,
+        idx: Optional[int] = None,
+        pieces_and_labels: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+    ) -> None:
 
-        idx = idx or np.random.randint(0, len(self) - 1)
-        puzzle_pieces, labels = self[idx]
-        rows = self.filtered_df.iloc[idx]["rows"]
-        cols = self.filtered_df.iloc[idx]["cols"]
+        if pieces_and_labels is not None:
+            puzzle_pieces, labels = pieces_and_labels
+        else:
+            idx = idx or np.random.randint(0, len(self) - 1)
+            puzzle_pieces, labels = self[idx]
+
+        rows, cols = self.puzzle_shape
 
         _, axs = plt.subplots(
             rows,

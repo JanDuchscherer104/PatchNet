@@ -22,7 +22,7 @@ class TestLitJigsawDataModule(unittest.TestCase):
     def test_get_item_output_types_and_shapes(self):
         # Mock the __getitem__ method to return a sample batch
         sample_data = torch.rand(3, 64, 64)
-        sample_labels = torch.tensor([0, 0, 0, 0])
+        sample_labels = torch.tensor([0, 0, 0])
         self.data_module.__getitem__ = MagicMock(
             return_value=(sample_data, sample_labels)
         )
@@ -36,7 +36,7 @@ class TestLitJigsawDataModule(unittest.TestCase):
     def test_dataloader_output_types_and_shapes(self):
         # Mock the dataloader to return a sample batch
         sample_data = torch.rand(2, 3, 64, 64)
-        sample_labels = torch.tensor([[0, 0, 0, 0], [0, 0, 0, 0]])
+        sample_labels = torch.tensor([[0, 0, 0], [0, 0, 0]])
         self.data_module.train_dataloader = MagicMock(
             return_value=iter([(sample_data, sample_labels)])
         )
@@ -46,7 +46,7 @@ class TestLitJigsawDataModule(unittest.TestCase):
             self.assertIsInstance(data, torch.Tensor)
             self.assertIsInstance(labels, torch.Tensor)
             self.assertEqual(data.shape, torch.Size([2, 3, 64, 64]))
-            self.assertEqual(labels.shape, torch.Size([2, 4]))
+            self.assertEqual(labels.shape, torch.Size([2, 2]))
 
     def test_real_train_set_output_types_and_shapes(self):
         self.data_module.prepare_data()
@@ -67,12 +67,20 @@ class TestLitJigsawDataModule(unittest.TestCase):
             )
             self.assertEqual(
                 labels.shape,
-                (self.hparams.batch_size, np.prod(self.hparams.puzzle_shape), 4),
+                (self.hparams.batch_size, np.prod(self.hparams.puzzle_shape), 3),
             )
 
             # Optionally, you can break after the first batch to speed up the test
             if i >= 1:
                 break
+
+        # plot_sample of the first batch
+        for i in range(self.hparams.batch_size):
+            self.data_module.jigsaw_train.plot_sample(
+                pieces_and_labels=(data[i], labels[i])
+            )
+            # wait for the plot to be displayed
+            input("Waiting...")
 
 
 if __name__ == "__main__":
