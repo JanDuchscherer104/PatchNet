@@ -1,6 +1,5 @@
 import json
 import random
-import re
 import tempfile
 from pathlib import Path
 from typing import Tuple
@@ -25,7 +24,7 @@ class SmolPiecemaker:
 
     def conv_to_jigsaw(
         self, img_path: Path, height: int, width: int, is_new_mask: bool = True
-    ) -> Tuple[int, int, int, int, bool]:
+    ) -> Tuple[int, int, int, int, int, int, bool]:
 
         scaled_sizes = set(self.config.scaled_sizes)
         minimum_scale = min(scaled_sizes)
@@ -46,17 +45,18 @@ class SmolPiecemaker:
             k=1,
         )[0]
 
-        (img_path, jpc, rows, cols) = piecemaker.lines_svg.create_lines_svg(
-            output_dir=self.config.mask_dir,
-            minimum_piece_size=self.config.minimum_piece_size,
-            maximum_piece_size=self.config.maximum_piece_size,
-            width=width,
-            height=height,
-            number_of_pieces=self.config.number_of_pieces,
-            imagefile=img_path,
-            variant=choice,
-            svg_file=svg_file,
-        )
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            (img_path, jpc, rows, cols) = piecemaker.lines_svg.create_lines_svg(
+                output_dir=tmp_dir,
+                minimum_piece_size=self.config.minimum_piece_size,
+                maximum_piece_size=self.config.maximum_piece_size,
+                width=width,
+                height=height,
+                number_of_pieces=self.config.number_of_pieces,
+                imagefile=img_path,
+                variant=choice,
+                svg_file=svg_file,
+            )
         storchastic_nub: bool = choice[0] == "s"
 
         width = jpc.width
@@ -137,7 +137,7 @@ class SmolPiecemaker:
 
             segments_dir = full_size_dir / "raster_with_padding"
             class_id, sample_number = identifier.split("_")
-            cls_dir = self.config.out_dir / class_id
+            cls_dir = self.config.jigsaw_dir / "images" / class_id
             cls_dir.mkdir(parents=True, exist_ok=True)
 
             max_width = 0
@@ -150,6 +150,8 @@ class SmolPiecemaker:
 
                     max_width = max(max_width, img.shape[1])
                     max_height = max(max_height, img.shape[0])
+                    min_width = min(max_width, img.shape[1])
+                    min_height = min(max_height, img.shape[0])
 
                 f.attrs["piece_count"] = piece_count
                 f.attrs["rows"] = rows
@@ -158,4 +160,12 @@ class SmolPiecemaker:
                 f.attrs["max_height"] = max_height
                 f.create_dataset("id_row_col", data=id_row_col)
 
-            return rows, cols, max_width, max_height, storchastic_nub
+            return (
+                rows,
+                cols,
+                max_width,
+                max_height,
+                min_width,
+                min_height,
+                storchastic_nub,
+            )

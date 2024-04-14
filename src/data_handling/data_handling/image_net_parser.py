@@ -3,6 +3,7 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+import psutil
 from pandarallel import pandarallel
 from PIL import Image
 
@@ -17,13 +18,15 @@ class ImageNetParser:
 
     def __init__(self, config: Config) -> None:
         self.config = config
-        self.data_dir = self.config.paths.data
-        self.synset_mapping_file: Path = self.data_dir / "LOC_synset_mapping.txt"
+        self.imagenet_dir = self.config.paths.imagenet_dir
+        self.synset_mapping_file: Path = self.imagenet_dir / "LOC_synset_mapping.txt"
 
         self.piecemaker = SmolPiecemaker(self.config.piecemaker_config)
 
         if self.config.is_multiproc:
-            pandarallel.initialize(progress_bar=True)
+            pandarallel.initialize(
+                progress_bar=True, nb_workers=psutil.cpu_count(logical=True)
+            )
 
     def read_synset_mappings(self) -> pd.DataFrame:
         with open(self.synset_mapping_file, "r") as f:
@@ -41,7 +44,7 @@ class ImageNetParser:
         return df
 
     def read_solution_csv(self, split: str) -> pd.DataFrame:
-        solution_file: Path = self.data_dir / f"LOC_{split}_solution.csv"
+        solution_file: Path = self.imagenet_dir / f"LOC_{split}_solution.csv"
         df = pd.read_csv(solution_file).rename(columns={"ImageId": "image_id"})
         df[["class_id", "num_sample"]] = df["image_id"].str.rsplit(
             "_", n=1, expand=True
@@ -51,7 +54,7 @@ class ImageNetParser:
     def to_jigsaw(
         self, df: pd.DataFrame, split: Literal["train", "val", "test"]
     ) -> pd.DataFrame:
-        images_dir = self.data_dir / f"ILSVRC/Data/CLS-LOC/{split}"
+        images_dir = self.imagenet_dir / f"ILSVRC/Data/CLS-LOC/{split}"
         assert images_dir.exists()
 
         df.assign(
@@ -61,6 +64,8 @@ class ImageNetParser:
             cols=0,
             max_width=0,
             max_height=0,
+            min_width=0,
+            min_height=0,
             stochastic_nub=False,
         ).astype(
             {
@@ -70,6 +75,8 @@ class ImageNetParser:
                 "cols": "uint8",
                 "max_width": "uint16",
                 "max_height": "uint16",
+                "min_width": "uint16",
+                "min_height": "uint16",
                 "stochastic_nub": "bool",
             }
         )
@@ -91,6 +98,8 @@ class ImageNetParser:
                     row["cols"],
                     row["max_width"],
                     row["max_height"],
+                    row["min_width"],
+                    row["min_height"],
                     row["stochastic_nub"],
                 ) = self.piecemaker.conv_to_jigsaw(img_pth, width=width, height=height)
             except Exception as e:
@@ -102,15 +111,27 @@ class ImageNetParser:
                     row["cols"],
                     row["max_width"],
                     row["max_height"],
+                    row["min_width"],
+                    row["min_height"],
                     row["stochastic_nub"],
-                ) = [None] * 7
+                ) = [None] * 9
             return row
 
-        if self.config.is_multiproc:
-            df = df.parallel_apply(make_jigsaw, axis=1)
-        else:
-            df = df.apply(make_jigsaw, axis=1)
+        df = (
+            df.parallel_apply(make_jigsaw, axis=1)
+            if self.config.is_multiproc
+            else df.apply(make_jigsaw, axis=1)
+        )
 
-        df.to_csv(self.config.paths.jigsaw_samples.parent / f"{split}_jigsaw.csv")
+        csv_path = self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv"
+        if csv_path.exists():
+            df = (
+                pd.read_csv(csv_path)
+                .set_index("image_id")
+                .combine_first(df.set_index("image_id"))
+                .reset_index()
+            )
+
+        df.to_csv(self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv")
 
         return df

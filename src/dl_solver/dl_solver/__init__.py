@@ -1,5 +1,6 @@
 from .config import Config, HyperParameters, PiecemakerConfig
 from .jigsaw_dataset import JigsawDataset
+from .lit_datamodule import LitJigsawDataModule
 from .lit_module import LitModule
 
 __all__ = [
@@ -8,4 +9,5 @@ __all__ = [
     "HyperParameters",
     "PiecemakerConfig",
     "JigsawDataset",
+    "LitJigsawDataModule",
 ]

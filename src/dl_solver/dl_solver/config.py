@@ -1,8 +1,9 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Type, TypeVar
+from typing import Dict, List, Literal, Optional, Tuple, Type, TypeVar
 
 import mlflow
+import psutil
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
 from typing_extensions import Annotated
@@ -78,12 +79,12 @@ class PiecemakerConfig(BaseModel):
     )
     number_of_pieces: int = Field(12, description="Target count of pieces")  # 3 x 4
     minimum_piece_size: int = Field(
-        25,
+        48,
         description="""Minimum piece size. Will change the count of pieces to
                         meet this if not set to 0.""",
     )
     maximum_piece_size: int = Field(
-        512,
+        256,
         description="""Maximum piece size. Will resize the image if not set
                         to 0 and should be at least greater than double the
                         set minimum piece size.""",
@@ -123,12 +124,11 @@ class Config(YamlBaseModel):
     verbose: bool = True
     from_ckpt: Optional[str] = None
     is_multiproc: bool = True
-    is_optuna: bool = True
-    num_workers: Optional[int] = 4
+    num_workers: Optional[int] = None
+    is_optuna: bool = False
     pin_memory: bool = True
     max_epochs: int = 50
     is_gpu: bool = True
-    log_every_n_steps: int = 128
     is_fast_dev_run: bool = False
     active_callbacks: Dict[
         Literal[
@@ -179,13 +179,19 @@ class Config(YamlBaseModel):
             f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
         )
 
+        if self.num_workers is None and self.is_multiproc:
+            self.num_workers = psutil.cpu_count(logical=True)
+
         self.piecemaker_config.jigsaw_dir = self.paths.jigsaw_dir
 
         return self
 
 
 class HyperParameters(YamlBaseModel):
-    learning_rate: float
-    batch_size: int
-    weight_decay: float
-    num_epochs: int
+    batch_size: int = 8
+    learning_rate: float = 1e-3
+    weight_decay: float = 1e-4
+    num_epochs: int = 50
+
+    puzzle_shape: Tuple[int, int] = (3, 4)
+    segment_shape: Tuple[int, int] = (64, 64)

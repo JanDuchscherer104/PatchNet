@@ -1,9 +1,35 @@
+import random
+import threading
+from typing import Dict, Tuple
+
 import albumentations as A
+import numpy as np
+import torch
+from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.pytorch import ToTensorV2
 
 
+class RotateAndRecord(ImageOnlyTransform):
+    def __init__(self, always_apply=False, p=1):
+        super(RotateAndRecord, self).__init__(always_apply, p)
+        self.local = threading.local()  # Thread-local storage for rotation index
+
+    def apply(self, img: np.ndarray[np.uint8], **params) -> np.ndarray:
+        self.local.rotation_idx = np.random.randint(0, 4)
+        return np.rot90(m=img, k=self.local.rotation_idx)
+
+    def get_transform_init_args_names(self):
+        return ()
+
+    def get_params_dependent_on_targets(self, params):
+        return {}
+
+    def get_applied_rotation(self):
+        return self.local.rotation_idx
+
+
 class AlbumTransforms:
-    def __init__(self, resize: tuple = (64, 64)):
+    def __init__(self, resize: Tuple[int, int] = (64, 64)):
         self.train_augmentations = A.Compose(
             [
                 A.RandomBrightnessContrast(
@@ -23,27 +49,55 @@ class AlbumTransforms:
                     ],
                     p=0.8,
                 ),
-                A.CoarseDropout(max_holes=8, max_height=16, max_width=16, p=0.3),
+                A.CoarseDropout(max_holes=8, max_height=4, max_width=4, p=0.3),
             ]
         )
-        self.transforms = A.Compose(
+        self.transforms = A.ReplayCompose(
             [
                 A.Resize(*resize),
-                A.RandomRotate90(always_apply=False, p=0.5),
+                RotateAndRecord(always_apply=True),
                 A.Normalize(
-                    mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-                ),  # ImageNet
+                    mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225)
+                ),  # ImageNet stats
                 ToTensorV2(),
             ]
         )
 
-    def __call__(self, image, train=True):
-        if train:
-            image = self.train_augmentations(image=image)["image"]
-        transformed = self.transforms(image=image)
-        image = transformed["image"]
-        # TODO: check if this is correct
-        rotation = transformed["replay"]["transforms"][1]["applied"]
-        rotation_label = [0, 1, 2, 3][rotation]
+    def __call__(
+        self,
+        puzzle_pieces: Dict[str, np.ndarray[np.uint8]],  # "piece_{id}"
+        labels: np.ndarray[np.uint8],  # (num_pieces, 3) id, row, col
+        is_train: bool = True,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        transformed_pieces = []
+        rotation_labels = []
 
-        return image, rotation_label
+        for label in labels:
+            id, *_ = label
+            piece = puzzle_pieces[f"piece_{id}"]
+            if is_train:
+                piece = self.train_augmentations(image=piece)["image"]
+            transformed = self.transforms(image=piece)
+            transformed_piece = transformed["image"]
+
+            rotation_label = self.transforms.transforms[1].get_applied_rotation()
+
+            transformed_pieces.append(transformed_piece)
+            rotation_labels.append(rotation_label)
+
+        # Convert to tensors
+        transformed_pieces = torch.stack(transformed_pieces, dim=0)
+        labels = torch.cat(
+            [
+                torch.from_numpy(labels[:, 1:]).type(torch.int64),
+                torch.tensor(rotation_labels, dtype=torch.int64).unsqueeze(1),
+            ],
+            dim=1,
+        )
+
+        # Shuffle both tensors
+        indices = torch.randperm(transformed_pieces.size(0))
+        transformed_pieces = transformed_pieces[indices]
+        labels = labels[indices]
+
+        return transformed_pieces, labels

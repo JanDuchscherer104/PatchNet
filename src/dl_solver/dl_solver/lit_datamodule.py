@@ -1,81 +1,93 @@
-from pathlib import Path
-from typing import Literal, Tuple
+from typing import Optional
 
-import h5py
-import numpy as np
-import pandas as pd
-import torch
-from matplotlib import pyplot as plt
-from torch.utils.data import Dataset
+import pytorch_lightning as pl
+from torch.utils.data import DataLoader
+
+from .album_transforms import AlbumTransforms
+from .config import Config, HyperParameters
+from .jigsaw_dataset import JigsawDataset
 
 
-class JigsawDataset(Dataset):
-    dataset_dir: Path
-    split: Literal["train", "val", "test"]
+class LitJigsawDataModule(pl.LightningDataModule):
+    config: Config
+    hparams: HyperParameters
 
-    def __init__(
-        self, dataset_dir: Path, split: Literal["train", "val", "test"]
-    ) -> None:
-        self.dataset_dir = dataset_dir
-        self.split = split
+    transforms: AlbumTransforms
 
-        self.df = pd.read_csv(self.csv_file_path)
+    jigsaw_train: JigsawDataset
+    jigsaw_val: JigsawDataset
+    jigsaw_test: JigsawDataset
 
-    @property
-    def csv_file_path(self) -> Path:
-        self.dataset_dir / f"{self.split}_jigsaw.csv"
+    def __init__(self, config: Config, hparams: HyperParameters):
+        super().__init__()
+        self.config = config
+        self.save_hyperparameters(hparams.model_dump())
 
-    def filter_by_shape(self, rows: int, cols: int) -> None:
-        self.df = self.df.query("rows == @rows and cols == @cols")
+        self.transforms = AlbumTransforms(resize=self.hparams.segment_shape)
 
-    def get_max_segment_shape(self) -> Tuple[int, int]:
-        return self.df["max_width"].max(), self.df["max_height"].max()
+    def setup(self, stage: Optional[str] = None):
+        match stage:
+            case "fit":
+                self.jigsaw_train = JigsawDataset(
+                    self.config.paths.jigsaw_dir,
+                    split="train",
+                    puzzle_shape=self.hparams.puzzle_shape,
+                    transforms=self.transforms,
+                )
+            case "validate":
+                self.jigsaw_val = JigsawDataset(
+                    self.config.paths.jigsaw_dir,
+                    split="val",
+                    puzzle_shape=self.hparams.puzzle_shape,
+                    transforms=self.transforms,
+                )
+            case "test":
+                self.jigsaw_test = JigsawDataset(
+                    self.config.paths.jigsaw_dir,
+                    split="test",
+                    puzzle_shape=self.hparams.puzzle_shape,
+                    transforms=self.transforms,
+                )
+            case _:
+                raise ValueError(f"Unknown stage: {stage}")
 
-    def get_min_segment_shape(self) -> Tuple[int, int]:
-        return self.df["min_width"].min(), self.df["min_height"].min()
+    def train_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.jigsaw_train,
+            batch_size=self.hparams.batch_size,
+            pin_memory=self.config.pin_memory,
+            num_workers=self.config.num_workers,
+            shuffle=True,
+        )
 
-    def __len__(self) -> int:
-        return len(self.df)
+    def val_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.jigsaw_val,
+            batch_size=self.hparams.batch_size,
+            pin_memory=self.config.pin_memory,
+            num_workers=self.config.num_workers,
+        )
 
-    def __getitem__(self, idx):
-        if torch.is_tensor(idx):
-            idx = idx.tolist()
+    def test_dataloader(self) -> DataLoader:
+        return DataLoader(
+            self.jigsaw_test,
+            batch_size=self.hparams.batch_size,
+            pin_memory=self.config.pin_memory,
+            num_workers=self.config.num_workers,
+        )
 
-        row = self.dataframe.iloc[idx]
-        hdf5_filepath = self.root_dir / row["class_id"] / f"{row['num_sample']}.hdf5"
+    def prepare_data(self) -> None:
+        for stage in ("fit", "validate", "test"):
+            try:
+                self.setup(stage)
+                split = (
+                    "train"
+                    if stage == "fit"
+                    else "val" if stage == "validate" else stage
+                )
+                ds: JigsawDataset = getattr(self, f"jigsaw_{split}")
+                ds.refurb_df(is_save_df=True)
 
-        with h5py.File(hdf5_filepath, "r") as f:
-            puzzle_pieces = {
-                dataset_name: torch.from_numpy(np.array(dataset))
-                for dataset_name, dataset in f.items()
-                if dataset_name.startswith("piece_")
-            }
-            labels = torch.from_numpy(np.array(f["id_row_col"]))
-
-        sample = {
-            "puzzle_pieces": puzzle_pieces,
-            "labels": labels,
-        }
-
-        return sample
-
-    def plot_sample(self, idx: int) -> None:
-        sample = self.__getitem__(idx)
-        puzzle_pieces = sample["puzzle_pieces"]
-        rows = sample["rows"]
-        cols = sample["cols"]
-
-        fig, axs = plt.subplots(rows, cols, figsize=(5 * cols, 5 * rows))
-
-        for piece in puzzle_pieces["id_row_col"]:
-            id, row, col = piece
-            axs[row, col].imshow(puzzle_pieces[f"piece_{id}"].numpy().astype(int))
-            axs[row, col].axis("off")
-
-        for row in range(rows):
-            for col in range(cols):
-                if not axs[row, col].has_data():
-                    fig.delaxes(axs[row, col])
-
-        plt.subplots_adjust(wspace=0.0005, hspace=0.0005)
-        plt.show()
+            except Exception as e:
+                print(f"Error setting up {stage} dataset: {e}")
+                continue
