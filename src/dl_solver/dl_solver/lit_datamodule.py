@@ -8,7 +8,7 @@ from .config import Config, HyperParameters
 from .jigsaw_dataset import JigsawDataset
 
 
-class LitJigsawDataModule(pl.LightningDataModule):
+class LitJigsawDatamodule(pl.LightningDataModule):
     config: Config
     hparams: HyperParameters
 

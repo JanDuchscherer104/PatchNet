@@ -7,7 +7,7 @@ from torch import nn
 from .config import Config, HyperParameters
 
 
-class LitModule(pl.LightningModule):
+class LitJigsawModule(pl.LightningModule):
     config: Config
     hparams: HyperParameters
 

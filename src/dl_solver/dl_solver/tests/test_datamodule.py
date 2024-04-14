@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import torch
 
-from dl_solver import Config, HyperParameters, LitJigsawDataModule
+from dl_solver import Config, HyperParameters, LitJigsawDatamodule
 
 
 class TestLitJigsawDataModule(unittest.TestCase):
@@ -17,7 +17,7 @@ class TestLitJigsawDataModule(unittest.TestCase):
             learning_rate=0.001,
             weight_decay=0.001,
         )
-        self.data_module = LitJigsawDataModule(self.config, self.hparams)
+        self.data_module = LitJigsawDatamodule(self.config, self.hparams)
 
     def test_get_item_output_types_and_shapes(self):
         # Mock the __getitem__ method to return a sample batch

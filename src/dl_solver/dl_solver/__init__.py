@@ -1,13 +1,13 @@
 from .config import Config, HyperParameters, PiecemakerConfig
 from .jigsaw_dataset import JigsawDataset
-from .lit_datamodule import LitJigsawDataModule
-from .lit_module import LitModule
+from .lit_datamodule import LitJigsawDatamodule
+from .lit_module import LitJigsawModule
 
 __all__ = [
     "Config",
-    "LitModule",
+    "LitJigsawModule",
     "HyperParameters",
     "PiecemakerConfig",
     "JigsawDataset",
-    "LitJigsawDataModule",
+    "LitJigsawDatamodule",
 ]
