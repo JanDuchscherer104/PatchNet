@@ -144,59 +144,54 @@ class JigsawDataset(Dataset):
         plt.subplots_adjust(wspace=0.0005, hspace=0.0005)
         plt.show()
 
-    def update_min_dimensions(self) -> None:
-        min_widths = []
-        min_heights = []
-        rows_to_drop = []
+    def _update_min_dimensions(self) -> None:
+        import pandarallel
 
-        for index, row in self.df.iterrows():
+        pandarallel.pandarallel.initialize(progress_bar=True, nb_workers=16)
+
+        def update_row(row: pd.Series) -> pd.Series:
             hdf5_filepath = (
                 self.dataset_dir
                 / "images"
                 / row["class_id"]
                 / f"{int(row['num_sample'])}.hdf5"
             )
-            min_width = min_height = float("inf")
+            min_width = row["max_width"]
+            min_height = row["max_height"]
             try:
                 with h5py.File(hdf5_filepath, "r") as f:
                     for dataset_name, dataset in f.items():
                         if dataset_name.startswith("piece_"):
                             img = np.array(dataset)
-                            min_width = min(min_width, img.shape[1])
-                            min_height = min(min_height, img.shape[0])
+                            row["min_width"] = min(min_width, img.shape[1])
+                            row["min_height"] = min(min_height, img.shape[0])
             except Exception as e:
-                # remove the row if the file is not found
-                rows_to_drop.append(index)
-                continue
-            else:
-                min_widths.append(min_width)
-                min_heights.append(min_height)
+                # mark the row to be dropped
+                row["drop"] = True
+            return row
 
-        print(f"Dropping {len(rows_to_drop)} rows")
-        self.df = (
-            self.df.drop(rows_to_drop)
-            .reset_index(drop=True)
-            .assign(min_width=min_widths, min_height=min_heights)
-            .astype(
-                {
-                    "min_width": "int16",
-                    "min_height": "int16",
-                    "max_width": "int16",
-                    "max_height": "int16",
-                    "width": "int16",
-                    "height": "int16",
-                    "rows": "uint8",
-                    "cols": "uint8",
-                    "image_id": str,
-                    "class_id": str,
-                    "num_sample": "uint32",
-                    "stochastic_nub": "bool",
-                }
-            )
-            .drop(columns=["Unnamed: 0", "Unnamed: 0.1"])
+        self.df["drop"] = False
+        df = self.df.parallel_apply(update_row, axis=1)
+
+        print(f"Dropping {df['drop'].sum()} rows")
+        self.df = df.query("drop == False").drop(columns=["drop"])
+        self.df = self.df.reset_index(drop=True).astype(
+            {
+                "min_width": "int16",
+                "min_height": "int16",
+                "max_width": "int16",
+                "max_height": "int16",
+                "width": "int16",
+                "height": "int16",
+                "rows": "uint8",
+                "cols": "uint8",
+                "image_id": str,
+                "class_id": str,
+                "num_sample": "uint32",
+            }
         )
 
-    def refurb_df(self, is_save_df: bool = False) -> None:
+    def _refurb_df(self, is_save_df: bool = False) -> None:
         # check if each file exists
         rows_to_drop = []
         for index, row in self.df.iterrows():

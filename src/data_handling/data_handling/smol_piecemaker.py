@@ -158,6 +158,8 @@ class SmolPiecemaker:
                 f.attrs["cols"] = cols
                 f.attrs["max_width"] = max_width
                 f.attrs["max_height"] = max_height
+                f.attrs["min_width"] = min_width
+                f.attrs["min_height"] = min_height
                 f.create_dataset("id_row_col", data=id_row_col)
 
             return (

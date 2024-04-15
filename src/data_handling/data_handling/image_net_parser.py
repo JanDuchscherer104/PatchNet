@@ -1,6 +1,8 @@
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
-from typing import Literal
+from typing import Literal, Optional
 
+import h5py
 import numpy as np
 import pandas as pd
 import psutil
@@ -22,6 +24,7 @@ class ImageNetParser:
         self.synset_mapping_file: Path = self.imagenet_dir / "LOC_synset_mapping.txt"
 
         self.piecemaker = SmolPiecemaker(self.config.piecemaker_config)
+        self.__existing_df: Optional[pd.DataFrame] = None
 
         if self.config.is_multiproc:
             pandarallel.initialize(
@@ -117,16 +120,23 @@ class ImageNetParser:
                 ) = [None] * 9
             return row
 
-        df = (
-            df.parallel_apply(make_jigsaw, axis=1)
-            if self.config.is_multiproc
-            else df.apply(make_jigsaw, axis=1)
-        )
+        existing_df = self.existing_df(split)
+        if not existing_df.empty:
+            df = df[~df["image_id"].isin(existing_df["image_id"])]
+
+        try:
+            df = (
+                df.parallel_apply(make_jigsaw, axis=1)
+                if self.config.is_multiproc
+                else df.apply(make_jigsaw, axis=1)
+            )
+        except Exception as e:
+            print(f"Error: {e}")
 
         csv_path = self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv"
         if csv_path.exists():
             df = (
-                pd.read_csv(csv_path)
+                self.existing_df(split)
                 .set_index("image_id")
                 .combine_first(df.set_index("image_id"))
                 .reset_index()
@@ -135,3 +145,61 @@ class ImageNetParser:
         df.to_csv(self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv")
 
         return df
+
+    def existing_df(self, split: Literal["train", "val", "test"]) -> pd.DataFrame:
+        if self.__existing_df is None:
+            try:
+                self.__existing_df = pd.read_csv(
+                    self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv"
+                )
+            except FileNotFoundError:
+                return pd.DataFrame()
+        return self.__existing_df
+
+    def add_missing_info(self) -> pd.DataFrame:
+        files = list(Path(self.config.paths.jigsaw_dir / "images").glob("**/*.hdf5"))
+        if self.config.is_multiproc:
+            with ProcessPoolExecutor(max_workers=self.config.num_workers) as executor:
+                data = list(executor.map(self.process_file, files))
+        else:
+            data = [self.process_file(file) for file in files]
+
+        data = [d for d in data if d is not None]  # Filter out None values
+        new_df = pd.DataFrame(data).set_index("image_id")
+        existing_df = self.existing_df("train").set_index("image_id")
+        df = existing_df.combine_first(new_df).reset_index()
+
+        return df
+
+    def process_file(self, file: Path) -> dict:
+        try:
+            with h5py.File(file, "r") as f:
+                attrs = f.attrs
+                img_pth = (
+                    self.imagenet_dir
+                    / f"ILSVRC/Data/CLS-LOC/train"
+                    / file.parent.name
+                    / f"{file.parent.name}_{file.stem}"
+                ).with_suffix(".JPEG")
+                with Image.open(img_pth) as img:
+                    width, height = img.size
+                data = {
+                    "image_id": f"{file.parent.name}_{file.stem}",
+                    "class_id": file.parent.name,
+                    "num_sample": int(file.stem),
+                    "piece_count": int(attrs["piece_count"]),
+                    "cols": int(attrs["cols"]),
+                    "rows": int(attrs["rows"]),
+                    "max_width": int(attrs["max_width"]),
+                    "max_height": int(attrs["max_height"]),
+                    # "min_width": int(attrs["min_width"]),
+                    # "min_height": int(attrs["min_height"]),
+                    "width": int(width),
+                    "height": int(height),
+                    "stochastic_nub": None,
+                }
+            return data
+        except Exception as e:
+            print(f"Error processing file {file}: {e}, removing file.")
+            file.unlink()
+            return None
