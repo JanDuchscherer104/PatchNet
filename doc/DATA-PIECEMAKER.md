@@ -1,5 +1,42 @@
 # Data-Piecemaker
 
+## Jigsaw Dataset
+### Generation of samples
+```py
+from dl_solver import Config, JigsawDataset
+from data_handling import ImageNetParser
+
+imagenet_parser = ImageNetParser(config=Config(is_multiproc=True))
+imagenet_parser.read_solution_csv(split="train").pipe(
+    lambda df: imagenet_parser.to_jigsaw(df=df, split="train")
+).sample(N).pipe(lambda df: df.sample(1000))
+
+# Run Data Cleaning (if something went wrong!)
+dataset = JigsawDataset(dataset_dir=config.paths.jigsaw_dir, split='train', puzzle_shape=(None, None), transforms=None)
+ds._refurb_df(is_save_df=True)
+```
+
+```
+>>> ds.df.head()
+```
+|    | image_id        | class_id | cols | height | max_height | max_width | min_height | min_width | num_sample | piece_count | rows | stochastic_nub | width |
+|----|-----------------|----------|------|--------|------------|-----------|------------|-----------|------------|-------------|------|----------------|-------|
+| 0  | n01440764_10040 | n01440764 | 4    | 375    | 169        | 178       | 169        | 161       | 10040      | 12          | 3    | True           | 500   |
+| 1  | n01440764_10048 | n01440764 | 4    | 300    | 158        | 166       | 104        | 106       | 10048      | 12          | 3    | False          | 400   |
+| 2  | n01440764_1009  | n01440764 | 4    | 375    | 175        | 198       | 175        | 137       | 1009       | 12          | 3    | True           | 500   |
+| 3  | n01440764_10293 | n01440764 | 4    | 375    | 200        | 202       | 169        | 135       | 10293      | 12          | 3    | True           | 500   |
+| 4  | n01440764_10342 | n01440764 | 6    | 234    | 114        | 122       | 97         | 87        | 10342      | 18          | 3    | True           | 500   |
+
+```
+>>> ds.plot_sample()
+```
+![Augmented Sample from Training Set](.doc-assets/train_aug.png)
+
+
+**Distribution of Rows & Cols in the Dataset**:
+
+![Distribution of #Rows & #Cols in the Dataset](.doc-assets/row_col_hist_n12_min48_max256.png)
+
 ## Piecemaker
 - [GitHub::piecemaker](https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file)
 - [location](lib/piecemaker) of the submodule
@@ -61,7 +98,9 @@ pip install --upgrade --upgrade-strategy eager -e .
 
     - `raster_with_padding`: Contains the N segemented pieces of the Jigsaw puzzle as `jpg` files with padding to rectangular shape.
 
+
 ---
+
 
 ## Original ImageNet Dataset
 can be found [here](https://www.kaggle.com/c/imagenet-object-localization-challenge/data)

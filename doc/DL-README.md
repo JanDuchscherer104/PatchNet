@@ -5,6 +5,7 @@
 **PATCH-Net** (**P**uzzle **A**ssembly by **T**ransformer and **C**NN **H**ybrid **Net**work) utilizes a pre-trained CNN backbone for feature extraction, an optional method for dimensionality reduction of the CNNs latent space, and a subsequent Transformer architecture with 2D/3D Learnable Fourier Features for spatial encoding. The model predicts the position and orientation of puzzle pieces, with three classification heads.
 
 ## Other MD Files
+
 - [TODO.md](TODO.md)
 - [DATA-PIECEMAKER.md](DATA-PIECEMAKER.md): Information about the submodule `piecemaker` for jigsaw puzzle generation, and the data structure of the original and puzzle-ized dataset.
 
@@ -13,10 +14,12 @@
 ![patch-net.svg](./.doc-assets/patch-net.svg)
 
 - **Input**: Images represented as $\mathbf{X} \in \mathbb{R}^{L \times C_{\text{RGB}} \times H \times W}$
-- **CNN**: A fine-tuned backbone (ResNet, EfficientNet) for feature extraction.
-    - A good starting-point for model selection might be [An evaluation of pre-trained models for feature extraction in image classification
-](https://ar5iv.labs.arxiv.org/html/2310.02037), [Paper](https://arxiv.org/abs/2310.02037)
-- (optional) **Dimensionality Reduction**: PCA or Autoencoders reduce the feature space dimensionality.
+- **CNN**: A fine-tuned backbone (~~ResNet~~, **EfficientNet**) for feature extraction.
+  - ~~A good starting-point for model selection might be [An evaluation of pre-trained models for feature extraction in image classification
+](https://ar5iv.labs.arxiv.org/html/2310.02037), [Paper](https://arxiv.org/abs/2310.02037)~~
+  - Use a pre-trained EfficientNetV2-S model.
+- (optional) ~~**Dimensionality Reduction**: PCA or Autoencoders reduce the feature space dimensionality.~~
+    - Leave out for now
 - **Transformer**:
   - Encoder processes features without positional embedding.
   - Decoder uses 2D/3D [Learnable Fourier Features](https://arxiv.org/pdf/2106.02795v1) for spatial encoding.
@@ -26,7 +29,8 @@ $$
 (x, y,\varphi), \quad \text{where } x \in \{0, \ldots, N-1\}, y \in \{0, \ldots, M-1\}, \varphi \in \{k\cdot90|k \in{0,\ldots,3}\}
 $$
 
-- **Classification Heads**: Three heads (`nn.Linear`) for predicting the location and orientation of puzzle pieces. Handling varying numbers of puzzle pieces is a future consideration.
+- ~~**Classification Heads**: Three heads (`nn.Linear`) for predicting the location and orientation of puzzle pieces. Handling varying numbers of puzzle pieces is a future consideration.~~
+- Instead of static classification heads, directly use the Transformer's output or a vocabulary for the position and rotation indices.
 - **Loss Calculation**: Combines $\mathcal{L}_2$ for position and $\mathcal{L}_{\text{CE}}$ for orientation.
 
 $$
@@ -35,6 +39,8 @@ $$
 $$
 where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 
+## Current State of the Project
+![Current State of the Project](./.doc-assets/dl_solver_uml.svg)
 
 ## Considerations
 
@@ -50,10 +56,10 @@ where $\eta \in \mathbb{R}^+$ is a hyperparameter.
 ## Third-Party Libraries
 
 ### Jigsaw Puzzle Generation
+
 - [GitHub::piecemaker](https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file)
 - [location](lib/piecemaker) of the submodule
 - find further information (installation, usage, ...) in [DATA-PIECEMAKER.md](./DATA-PIECEMAKER.md)
-
 
 - **Data Augmentation**: [Albumentations](https://albumentations.ai/)
 - **DL-Framework**: [PyTorch Lightning](https://www.pytorchlightning.ai/)
