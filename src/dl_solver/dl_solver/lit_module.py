@@ -5,13 +5,14 @@ import torch
 from torch import nn
 
 from .config import Config, HyperParameters
+from .patchnet import PatchNet
 
 
 class LitJigsawModule(pl.LightningModule):
     config: Config
     hparams: HyperParameters
 
-    model: nn.Module
+    model: PatchNet
     mse_loss: nn.Module
     cross_entropy_loss: nn.Module
 
@@ -20,6 +21,8 @@ class LitJigsawModule(pl.LightningModule):
 
         self.config = config
         self.save_hyperparameters(hparams.model_dump())
+
+        self.model = PatchNet(self.hparams)
 
         self.mse_loss = nn.MSELoss()
         self.cross_entropy_loss = nn.CrossEntropyLoss()

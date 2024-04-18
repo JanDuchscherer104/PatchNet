@@ -196,3 +196,7 @@ class HyperParameters(YamlBaseModel):
     puzzle_shape: Tuple[int, int] = (3, 4)
     segment_shape: Tuple[int, int] = (64, 64)
     rotation_loss_weight: float = 0.1
+
+    # PATCH-NET
+    num_features_out: int = 256
+    backbone_is_trainable: bool = False
