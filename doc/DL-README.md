@@ -22,7 +22,10 @@
     - Leave out for now
 - **Transformer**:
   - Encoder processes features without positional embedding.
-  - Decoder uses 2D/3D [Learnable Fourier Features](https://arxiv.org/pdf/2106.02795v1) for spatial encoding.
+  - Decoder uses 2D/3D spatial embeddings.
+    - **Learnable-Fourier-Features**: [Paper](https://arxiv.org/pdf/2106.02795v1), [GitHub](https://github.com/JHLew/Learnable-Fourier-Features)
+    - **[Multidim-Positional-Embedding](https://github.com/tatp22/multidim-positional-encoding)**: 1D, 2D, and 3D Sinusoidal Postional Encoding.
+
 - **Output**: Predicts position $(x, y)$ and orientation $\varphi$
 
 $$
@@ -30,6 +33,7 @@ $$
 $$
 
 - ~~**Classification Heads**: Three heads (`nn.Linear`) for predicting the location and orientation of puzzle pieces. Handling varying numbers of puzzle pieces is a future consideration.~~
+- Handling a varying number of rows and columns can be done through masking ~ [torch.masked](https://pytorch.org/docs/stable/masked.html)
 - Instead of static classification heads, directly use the Transformer's output or a vocabulary for the position and rotation indices.
 - **Loss Calculation**: Combines $\mathcal{L}_2$ for position and $\mathcal{L}_{\text{CE}}$ for orientation.
 

@@ -8,6 +8,8 @@
     - Generated `len(jigsaw_dataset) = 231653`
 - [x] Choose a suitable format / data structure for the labels.
 - [x] Store the dataset in a more efficient format (e.g. HDF5), to enable batched loading.
+- [ ] Generate `val` and `test` datasets.
+- [ ] Revise `Jigsaw-Dataset` to **not** store all images belonging to a sample as `np.ndarray` in `hdf5` files, but as `png` or `jpg` in a shared directory.
 
 ### Imagenet ~ **DONE**
 - We should adhere to the dataset order as per the `Loc_<split>_solution.csv` files. Meaning: first line --> first sample
@@ -43,7 +45,7 @@
 #### Positional Embeddings
 
 - [ ] Decide between concatenating or adding positional embeddings.
-- [ ] Find code for [Learnable Fourier Features for Spatially Encoded Transformers](https://arxiv.org/pdf/2106.02795v1)
+- [x] Find code for [Learnable Fourier Features for Spatially Encoded Transformers](https://arxiv.org/pdf/2106.02795v1): [GitHub](https://github.com/JHLew/Learnable-Fourier-Features)
 - [ ] Implement 2D/3D Learnable Fourier Features for spatial encoding in the Transformer Decoder.
 - The Transformer Decoders Vocabulary should be the set of all possible piece positions and rotations.
 

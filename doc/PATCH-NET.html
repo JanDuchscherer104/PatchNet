@@ -1,0 +1,778 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>PATCH-NET.md</title>
+<meta http-equiv="Content-type" content="text/html;charset=UTF-8">
+
+<style>
+/* https://github.com/microsoft/vscode/blob/master/extensions/markdown-language-features/media/markdown.css */
+/*---------------------------------------------------------------------------------------------
+ *  Copyright (c) Microsoft Corporation. All rights reserved.
+ *  Licensed under the MIT License. See License.txt in the project root for license information.
+ *--------------------------------------------------------------------------------------------*/
+
+body {
+	font-family: var(--vscode-markdown-font-family, -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif);
+	font-size: var(--vscode-markdown-font-size, 14px);
+	padding: 0 26px;
+	line-height: var(--vscode-markdown-line-height, 22px);
+	word-wrap: break-word;
+}
+
+#code-csp-warning {
+	position: fixed;
+	top: 0;
+	right: 0;
+	color: white;
+	margin: 16px;
+	text-align: center;
+	font-size: 12px;
+	font-family: sans-serif;
+	background-color:#444444;
+	cursor: pointer;
+	padding: 6px;
+	box-shadow: 1px 1px 1px rgba(0,0,0,.25);
+}
+
+#code-csp-warning:hover {
+	text-decoration: none;
+	background-color:#007acc;
+	box-shadow: 2px 2px 2px rgba(0,0,0,.25);
+}
+
+body.scrollBeyondLastLine {
+	margin-bottom: calc(100vh - 22px);
+}
+
+body.showEditorSelection .code-line {
+	position: relative;
+}
+
+body.showEditorSelection .code-active-line:before,
+body.showEditorSelection .code-line:hover:before {
+	content: "";
+	display: block;
+	position: absolute;
+	top: 0;
+	left: -12px;
+	height: 100%;
+}
+
+body.showEditorSelection li.code-active-line:before,
+body.showEditorSelection li.code-line:hover:before {
+	left: -30px;
+}
+
+.vscode-light.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.15);
+}
+
+.vscode-light.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(0, 0, 0, 0.40);
+}
+
+.vscode-light.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-dark.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.4);
+}
+
+.vscode-dark.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 255, 255, 0.60);
+}
+
+.vscode-dark.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+.vscode-high-contrast.showEditorSelection .code-active-line:before {
+	border-left: 3px solid rgba(255, 160, 0, 0.7);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line:hover:before {
+	border-left: 3px solid rgba(255, 160, 0, 1);
+}
+
+.vscode-high-contrast.showEditorSelection .code-line .code-line:hover:before {
+	border-left: none;
+}
+
+img {
+	max-width: 100%;
+	max-height: 100%;
+}
+
+a {
+	text-decoration: none;
+}
+
+a:hover {
+	text-decoration: underline;
+}
+
+a:focus,
+input:focus,
+select:focus,
+textarea:focus {
+	outline: 1px solid -webkit-focus-ring-color;
+	outline-offset: -1px;
+}
+
+hr {
+	border: 0;
+	height: 2px;
+	border-bottom: 2px solid;
+}
+
+h1 {
+	padding-bottom: 0.3em;
+	line-height: 1.2;
+	border-bottom-width: 1px;
+	border-bottom-style: solid;
+}
+
+h1, h2, h3 {
+	font-weight: normal;
+}
+
+table {
+	border-collapse: collapse;
+}
+
+table > thead > tr > th {
+	text-align: left;
+	border-bottom: 1px solid;
+}
+
+table > thead > tr > th,
+table > thead > tr > td,
+table > tbody > tr > th,
+table > tbody > tr > td {
+	padding: 5px 10px;
+}
+
+table > tbody > tr + tr > td {
+	border-top: 1px solid;
+}
+
+blockquote {
+	margin: 0 7px 0 5px;
+	padding: 0 16px 0 10px;
+	border-left-width: 5px;
+	border-left-style: solid;
+}
+
+code {
+	font-family: Menlo, Monaco, Consolas, "Droid Sans Mono", "Courier New", monospace, "Droid Sans Fallback";
+	font-size: 1em;
+	line-height: 1.357em;
+}
+
+body.wordWrap pre {
+	white-space: pre-wrap;
+}
+
+pre:not(.hljs),
+pre.hljs code > div {
+	padding: 16px;
+	border-radius: 3px;
+	overflow: auto;
+}
+
+pre code {
+	color: var(--vscode-editor-foreground);
+	tab-size: 4;
+}
+
+/** Theming */
+
+.vscode-light pre {
+	background-color: rgba(220, 220, 220, 0.4);
+}
+
+.vscode-dark pre {
+	background-color: rgba(10, 10, 10, 0.4);
+}
+
+.vscode-high-contrast pre {
+	background-color: rgb(0, 0, 0);
+}
+
+.vscode-high-contrast h1 {
+	border-color: rgb(0, 0, 0);
+}
+
+.vscode-light table > thead > tr > th {
+	border-color: rgba(0, 0, 0, 0.69);
+}
+
+.vscode-dark table > thead > tr > th {
+	border-color: rgba(255, 255, 255, 0.69);
+}
+
+.vscode-light h1,
+.vscode-light hr,
+.vscode-light table > tbody > tr + tr > td {
+	border-color: rgba(0, 0, 0, 0.18);
+}
+
+.vscode-dark h1,
+.vscode-dark hr,
+.vscode-dark table > tbody > tr + tr > td {
+	border-color: rgba(255, 255, 255, 0.18);
+}
+
+</style>
+
+<style>
+/* Tomorrow Theme */
+/* http://jmblog.github.com/color-themes-for-google-code-highlightjs */
+/* Original theme - https://github.com/chriskempson/tomorrow-theme */
+
+/* Tomorrow Comment */
+.hljs-comment,
+.hljs-quote {
+	color: #8e908c;
+}
+
+/* Tomorrow Red */
+.hljs-variable,
+.hljs-template-variable,
+.hljs-tag,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class,
+.hljs-regexp,
+.hljs-deletion {
+	color: #c82829;
+}
+
+/* Tomorrow Orange */
+.hljs-number,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-literal,
+.hljs-type,
+.hljs-params,
+.hljs-meta,
+.hljs-link {
+	color: #f5871f;
+}
+
+/* Tomorrow Yellow */
+.hljs-attribute {
+	color: #eab700;
+}
+
+/* Tomorrow Green */
+.hljs-string,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition {
+	color: #718c00;
+}
+
+/* Tomorrow Blue */
+.hljs-title,
+.hljs-section {
+	color: #4271ae;
+}
+
+/* Tomorrow Purple */
+.hljs-keyword,
+.hljs-selector-tag {
+	color: #8959a8;
+}
+
+.hljs {
+	display: block;
+	overflow-x: auto;
+	color: #4d4d4c;
+	padding: 0.5em;
+}
+
+.hljs-emphasis {
+	font-style: italic;
+}
+
+.hljs-strong {
+	font-weight: bold;
+}
+</style>
+
+<style>
+/*
+ * Markdown PDF CSS
+ */
+
+ body {
+	font-family: -apple-system, BlinkMacSystemFont, "Segoe WPC", "Segoe UI", "Ubuntu", "Droid Sans", sans-serif, "Meiryo";
+	padding: 0 12px;
+}
+
+pre {
+	background-color: #f8f8f8;
+	border: 1px solid #cccccc;
+	border-radius: 3px;
+	overflow-x: auto;
+	white-space: pre-wrap;
+	overflow-wrap: break-word;
+}
+
+pre:not(.hljs) {
+	padding: 23px;
+	line-height: 19px;
+}
+
+blockquote {
+	background: rgba(127, 127, 127, 0.1);
+	border-color: rgba(0, 122, 204, 0.5);
+}
+
+.emoji {
+	height: 1.4em;
+}
+
+code {
+	font-size: 14px;
+	line-height: 19px;
+}
+
+/* for inline code */
+:not(pre):not(.hljs) > code {
+	color: #C9AE75; /* Change the old color so it seems less like an error */
+	font-size: inherit;
+}
+
+/* Page Break : use <div class="page"/> to insert page break
+-------------------------------------------------------- */
+.page {
+	page-break-after: always;
+}
+
+</style>
+
+<script src="https://unpkg.com/mermaid/dist/mermaid.min.js"></script>
+</head>
+<body>
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast')
+          ? 'dark'
+          : 'default'
+    });
+  </script>
+<h1 id="patch-net-deep-learning-for-jigsaw-puzzle-solving">PATCH-Net: Deep Learning for Jigsaw Puzzle Solving</h1>
+<h2 id="overview">Overview</h2>
+<p><strong>PATCH-Net</strong> (<strong>P</strong>uzzle <strong>A</strong>ssembly by <strong>T</strong>ransformer and <strong>C</strong>NN <strong>H</strong>ybrid <strong>Net</strong>work) utilizes a pre-trained CNN backbone for feature extraction, an optional method for dimensionality reduction of the CNNs latent space, and a subsequent Transformer architecture with 2D/3D Learnable Fourier Features for spatial encoding. The model predicts the position and orientation of puzzle pieces, with three classification heads.</p>
+<h2 id="other-md-files">Other MD Files</h2>
+<ul>
+<li><a href="TODO.md">TODO.md</a></li>
+<li><a href="DATA-PIECEMAKER.md">DATA-PIECEMAKER.md</a>: Information about the submodule <code>piecemaker</code> for jigsaw puzzle generation, and the data structure of the original and puzzle-ized dataset.</li>
+</ul>
+<h2 id="architecture">Architecture</h2>
+<p><img src="./.doc-assets/patch-net.svg" alt="patch-net.svg"></p>
+<ul>
+<li><strong>Input</strong>: Images represented as $\mathbf{X} \in \mathbb{R}^{L \times C_{\text{RGB}} \times H \times W}$</li>
+<li><strong>CNN</strong>: A fine-tuned backbone (<s>ResNet</s>, <strong>EfficientNet</strong>) for feature extraction.
+<ul>
+<li><s>A good starting-point for model selection might be <a href="https://ar5iv.labs.arxiv.org/html/2310.02037">An evaluation of pre-trained models for feature extraction in image classification
+</a>, <a href="https://arxiv.org/abs/2310.02037">Paper</a></s></li>
+<li>Use a pre-trained EfficientNetV2-S model.</li>
+</ul>
+</li>
+<li>(optional) <s><strong>Dimensionality Reduction</strong>: PCA or Autoencoders reduce the feature space dimensionality.</s>
+<ul>
+<li>Leave out for now</li>
+</ul>
+</li>
+<li><strong>Transformer</strong>:
+<ul>
+<li>Encoder processes features without positional embedding.</li>
+<li>Decoder uses 2D/3D <a href="https://arxiv.org/pdf/2106.02795v1">Learnable Fourier Features</a> for spatial encoding.</li>
+</ul>
+</li>
+<li><strong>Output</strong>: Predicts position $(x, y)$ and orientation $\varphi$</li>
+</ul>
+<p>$$
+(x, y,\varphi), \quad \text{where } x \in {0, \ldots, N-1}, y \in {0, \ldots, M-1}, \varphi \in {k\cdot90|k \in{0,\ldots,3}}
+$$</p>
+<ul>
+<li><s><strong>Classification Heads</strong>: Three heads (<code>nn.Linear</code>) for predicting the location and orientation of puzzle pieces. Handling varying numbers of puzzle pieces is a future consideration.</s></li>
+<li>Instead of static classification heads, directly use the Transformer's output or a vocabulary for the position and rotation indices.</li>
+<li><strong>Loss Calculation</strong>: Combines $\mathcal{L}<em>2$ for position and $\mathcal{L}</em>{\text{CE}}$ for orientation.</li>
+</ul>
+<p>$$
+\mathcal{L}<em>{\text{total
+}} = | \mathbf{Y}</em>{:,:,:2} - \mathbf{\hat{Y}}<em>{:,:,:2} |<em>F^2 + \eta \mathcal{L}</em>{\text{CE}}(\mathbf{Y}</em>{:,:,2}, \mathbf{\hat{Y}}_{:,:,2})
+$$
+where $\eta \in \mathbb{R}^+$ is a hyperparameter.</p>
+<h2 id="current-state-of-the-project">Current State of the Project</h2>
+<p><img src="./.doc-assets/dl_solver_uml.svg" alt="Current State of the Project"></p>
+<h2 id="considerations">Considerations</h2>
+<ul>
+<li><strong>Data Representation</strong>: $\mathbf{y} \in { 0, \ldots, N_{\max}} \times{ 0, \ldots, M_{\max}} \times {0, \ldots 3 }$</li>
+<li><strong>Concatenation/Addition in Transformer Decoder</strong>: $\widetilde{\mathbf{X}}^{\langle t\rangle} \gets \widetilde{\mathbf{X}}^{\langle t-1\rangle}<em>{:,:,:d</em>{\text{model}}} \oplus \mathbf{E}_{\text{P}}$</li>
+<li><strong>Dimensionality Reduction</strong>: May occur after the dense layer for enhanced performance.</li>
+<li><strong>Unique Labels Check</strong>: Ensures no repetition of puzzle piece positions.</li>
+<li><strong>Beam Search</strong>: To improve the decoder's predictions.</li>
+<li>It might be a more straightforward approach to employ a pre-trained ViT model instead of a pre-trained CNN $\oplus$ custom Transformer architecture.</li>
+</ul>
+<hr>
+<h2 id="third-party-libraries">Third-Party Libraries</h2>
+<h3 id="jigsaw-puzzle-generation">Jigsaw Puzzle Generation</h3>
+<ul>
+<li>
+<p><a href="https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file">GitHub::piecemaker</a></p>
+</li>
+<li>
+<p><a href="lib/piecemaker">location</a> of the submodule</p>
+</li>
+<li>
+<p>find further information (installation, usage, ...) in <a href="./DATA-PIECEMAKER.md">DATA-PIECEMAKER.md</a></p>
+</li>
+<li>
+<p><strong>Data Augmentation</strong>: <a href="https://albumentations.ai/">Albumentations</a></p>
+</li>
+<li>
+<p><strong>DL-Framework</strong>: <a href="https://www.pytorchlightning.ai/">PyTorch Lightning</a></p>
+</li>
+</ul>
+<h2 id="literature--resources">Literature &amp; Resources</h2>
+<ul>
+<li><strong>Dataset</strong>: <a href="https://www.kaggle.com/c/imagenet-object-localization-challenge/data">ImageNet</a></li>
+<li><a href="https://arxiv.org/pdf/2106.02795v1">Learnable Fourier Features for Spatially Encoded Transformers</a></li>
+<li><a href="https://www.sciencedirect.com/science/article/pii/S0167865522003920">Jigsaw-ViT: Learning jigsaw puzzles in vision transformer</a>, <a href="https://github.com/yingyichen-cyy/JigsawViT/tree/master">GitHub</a></li>
+<li><a href="https://arxiv.org/abs/1706.03762">Attention is All You Need</a></li>
+<li><a href="https://www.youtube.com/watch?v=wjZofJX0v4M">Intuition for Embeddings</a></li>
+</ul>
+<hr>
+<hr>
+<h1 id="todos">TODOs</h1>
+<h2 id="data-generation">Data Generation</h2>
+<ul>
+<li><input type="checkbox" id="checkbox0"><label for="checkbox0">Explore </label><a href="%5Bpiecemaker%5D(https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file)">piecemaker</a> parameters to generate puzzles resembling real-world scenarios.</li>
+<li><input type="checkbox" id="checkbox1" checked="true"><label for="checkbox1">Implement parallel processing in </label><code>piecemaker</code>.</li>
+<li><input type="checkbox" id="checkbox2" checked="true"><label for="checkbox2">Generate a dataset of 1,000 images from </label><a href="https://www.kaggle.com/c/imagenet-object-localization-challenge/data">ImgNet</a>.
+<ul>
+<li>Generated <code>len(jigsaw_dataset) = 231653</code></li>
+</ul>
+</li>
+<li><input type="checkbox" id="checkbox3" checked="true"><label for="checkbox3">Choose a suitable format / data structure for the labels.</label></li>
+<li><input type="checkbox" id="checkbox4" checked="true"><label for="checkbox4">Store the dataset in a more efficient format (e.g. HDF5), to enable batched loading.</label></li>
+</ul>
+<h3 id="imagenet--done">Imagenet ~ <strong>DONE</strong></h3>
+<ul>
+<li>We should adhere to the dataset order as per the <code>Loc_&lt;split&gt;_solution.csv</code> files. Meaning: first line --&gt; first sample</li>
+<li>We should transfer the following information into our Jigsaw-Imagenet dataset:
+<ul>
+<li>ImageID</li>
+<li>Class ID (s)</li>
+<li>Number of bbox predictions</li>
+</ul>
+</li>
+<li>We might onyl use the cropped bbox images for the Jigsaw puzzles. And maybe only those that have a certain minimum size.</li>
+<li>In the Jigsaw-Imagenet dataset, we should store the separate pieces in a single file to avoid loading multiple files for each sample. consider formats: <code>HDF5</code> or <code>Parquet</code>.</li>
+<li>We might even save multiple samples in a single file to simplify the data loading process.</li>
+</ul>
+<hr>
+<h2 id="model-research">Model Research</h2>
+<h3 id="cnn">CNN</h3>
+<ul>
+<li><input type="checkbox" id="checkbox5" checked="true"><label for="checkbox5">Choose an appropriate pre-trained CNN as the backbone.</label>
+<ul>
+<li>Candidates:
+<ul>
+<li><s><code>ResNet</code></s></li>
+<li><code>EfficientNetV2</code>
+<ul>
+<li><a href="https://pytorch.org/vision/main/models/generated/torchvision.models.efficientnet_v2_s.html#torchvision.models.efficientnet_v2_s">PyTorch::EfficientNetV2S</a></li>
+<li><a href="https://github.com/huggingface/pytorch-image-models/blob/main/timm/models/efficientnet.py">TIMM</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+<h3 id="transformer--positional-embeddings">Transformer &amp; Positional Embeddings</h3>
+<ul>
+<li><input type="checkbox" id="checkbox6"><label for="checkbox6">Determine the input / output format for the Transformer Decoder.</label></li>
+<li><input type="checkbox" id="checkbox7"><label for="checkbox7">Should we employ beam-search for the Transformer Decoder?</label></li>
+<li><input type="checkbox" id="checkbox8"><label for="checkbox8">Explore handling a variable number of puzzle pieces.</label></li>
+<li><input type="checkbox" id="checkbox9"><label for="checkbox9">Employ Beam Search?</label></li>
+</ul>
+<h4 id="positional-embeddings">Positional Embeddings</h4>
+<ul>
+<li><input type="checkbox" id="checkbox10"><label for="checkbox10">Decide between concatenating or adding positional embeddings.</label></li>
+<li><input type="checkbox" id="checkbox11"><label for="checkbox11">Find code for </label><a href="https://arxiv.org/pdf/2106.02795v1">Learnable Fourier Features for Spatially Encoded Transformers</a></li>
+<li><input type="checkbox" id="checkbox12"><label for="checkbox12">Implement 2D/3D Learnable Fourier Features for spatial encoding in the Transformer Decoder.</label></li>
+<li>The Transformer Decoders Vocabulary should be the set of all possible piece positions and rotations.</li>
+</ul>
+<h3 id="dimensionality-reduction">Dimensionality Reduction</h3>
+<ul>
+<li><input type="checkbox" id="checkbox13"><label for="checkbox13">Investigate (pre-trained ?) auto-encoders (or PCA) for efficient dimensionality of the CNN's latent space. Is this necessary?</label></li>
+</ul>
+<hr>
+<h2 id="model-implementation">Model Implementation</h2>
+<ul>
+<li><input type="checkbox" id="checkbox14" checked="true"><label for="checkbox14">Develop an augmentation pipeline using </label><a href="https://albumentations.ai/">Albumentations</a>.</li>
+<li><input type="checkbox" id="checkbox15" checked="true"><label for="checkbox15"></label><a href="https://www.pytorchlightning.ai/">PyTorch Lightning</a> Framework consisting of
+<ul>
+<li><input type="checkbox" id="checkbox16"><label for="checkbox16"></label><a href="../src/dl_solver/dl_solver/lit_module.py">Lightning Module</a>
+<ul>
+<li>General sturcute done, Cost function done, optimizer done</li>
+</ul>
+</li>
+<li><input type="checkbox" id="checkbox17" checked="true"><label for="checkbox17"></label><a href="../src/dl_solver/dl_solver/lit_datamodule.py">Lightning Datamodule</a></li>
+</ul>
+</li>
+</ul>
+<hr>
+<hr>
+<h1 id="data-piecemaker">Data-Piecemaker</h1>
+<h2 id="jigsaw-dataset">Jigsaw Dataset</h2>
+<h3 id="generation-of-samples">Generation of samples</h3>
+<pre class="hljs"><code><div><span class="hljs-keyword">from</span> dl_solver <span class="hljs-keyword">import</span> Config, JigsawDataset
+<span class="hljs-keyword">from</span> data_handling <span class="hljs-keyword">import</span> ImageNetParser
+
+imagenet_parser = ImageNetParser(config=Config(is_multiproc=<span class="hljs-literal">True</span>))
+imagenet_parser.read_solution_csv(split=<span class="hljs-string">"train"</span>).pipe(
+    <span class="hljs-keyword">lambda</span> df: imagenet_parser.to_jigsaw(df=df, split=<span class="hljs-string">"train"</span>)
+).sample(N).pipe(<span class="hljs-keyword">lambda</span> df: df.sample(<span class="hljs-number">1000</span>))
+
+<span class="hljs-comment"># Run Data Cleaning (if something went wrong!)</span>
+dataset = JigsawDataset(dataset_dir=config.paths.jigsaw_dir, split=<span class="hljs-string">'train'</span>, puzzle_shape=(<span class="hljs-literal">None</span>, <span class="hljs-literal">None</span>), transforms=<span class="hljs-literal">None</span>)
+ds._refurb_df(is_save_df=<span class="hljs-literal">True</span>)
+</div></code></pre>
+<pre class="hljs"><code><div>&gt;&gt;&gt; ds.df.head()
+</div></code></pre>
+<table>
+<thead>
+<tr>
+<th></th>
+<th>image_id</th>
+<th>class_id</th>
+<th>cols</th>
+<th>height</th>
+<th>max_height</th>
+<th>max_width</th>
+<th>min_height</th>
+<th>min_width</th>
+<th>num_sample</th>
+<th>piece_count</th>
+<th>rows</th>
+<th>stochastic_nub</th>
+<th>width</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>0</td>
+<td>n01440764_10040</td>
+<td>n01440764</td>
+<td>4</td>
+<td>375</td>
+<td>169</td>
+<td>178</td>
+<td>169</td>
+<td>161</td>
+<td>10040</td>
+<td>12</td>
+<td>3</td>
+<td>True</td>
+<td>500</td>
+</tr>
+<tr>
+<td>1</td>
+<td>n01440764_10048</td>
+<td>n01440764</td>
+<td>4</td>
+<td>300</td>
+<td>158</td>
+<td>166</td>
+<td>104</td>
+<td>106</td>
+<td>10048</td>
+<td>12</td>
+<td>3</td>
+<td>False</td>
+<td>400</td>
+</tr>
+<tr>
+<td>2</td>
+<td>n01440764_1009</td>
+<td>n01440764</td>
+<td>4</td>
+<td>375</td>
+<td>175</td>
+<td>198</td>
+<td>175</td>
+<td>137</td>
+<td>1009</td>
+<td>12</td>
+<td>3</td>
+<td>True</td>
+<td>500</td>
+</tr>
+<tr>
+<td>3</td>
+<td>n01440764_10293</td>
+<td>n01440764</td>
+<td>4</td>
+<td>375</td>
+<td>200</td>
+<td>202</td>
+<td>169</td>
+<td>135</td>
+<td>10293</td>
+<td>12</td>
+<td>3</td>
+<td>True</td>
+<td>500</td>
+</tr>
+<tr>
+<td>4</td>
+<td>n01440764_10342</td>
+<td>n01440764</td>
+<td>6</td>
+<td>234</td>
+<td>114</td>
+<td>122</td>
+<td>97</td>
+<td>87</td>
+<td>10342</td>
+<td>18</td>
+<td>3</td>
+<td>True</td>
+<td>500</td>
+</tr>
+</tbody>
+</table>
+<pre class="hljs"><code><div>&gt;&gt;&gt; ds.plot_sample()
+</div></code></pre>
+<p><img src=".doc-assets/train_aug.png" alt="Augmented Sample from Training Set"></p>
+<p><strong>Distribution of Rows &amp; Cols in the Dataset</strong>:</p>
+<p><img src=".doc-assets/row_col_hist_n12_min48_max256.png" alt="Distribution of #Rows &amp; #Cols in the Dataset"></p>
+<h2 id="piecemaker">Piecemaker</h2>
+<ul>
+<li><a href="https://github.com/jkenlooper/piecemaker/tree/main?tab=readme-ov-file">GitHub::piecemaker</a></li>
+<li><a href="lib/piecemaker">location</a> of the submodule</li>
+</ul>
+<h3 id="installation">Installation</h3>
+<pre class="hljs"><code><div>sudo apt-get -y install libspatialindex6
+sudo apt-get -y install optipng
+sudo apt-get -y install potrace
+% activate conda / python environment
+<span class="hljs-built_in">cd</span> lib/piecemaker
+pip install --upgrade --upgrade-strategy eager -e .
+</div></code></pre>
+<h3 id="folder-structure">Folder Structure</h3>
+<ul>
+<li>
+<p><code>index.json</code>: This file contains metadata about the puzzle, such as the total number of pieces, the puzzle's height and width, and the size of each piece.</p>
+<ul>
+<li><code>piece_cut_variant</code>: The style of the puzzle piece cuts.</li>
+<li><code>full_size</code>: The full size of the puzzle.</li>
+<li><code>sizes</code>: An array of sizes for the puzzle.</li>
+<li><code>sides</code>: An array of sides for the puzzle.</li>
+<li><code>piece_count</code>: The total number of pieces in the puzzle.</li>
+<li><code>image_author</code>: The author of the image used to generate the puzzle.</li>
+<li><code>image_link</code>: The link to the image used to generate the puzzle.</li>
+<li><code>image_title</code>: The title of the image used to generate the puzzle.</li>
+<li><code>image_description</code>: The description of the image used to generate the puzzle.</li>
+<li><code>image_width</code>: The width of the image used to generate the puzzle.</li>
+<li><code>image_height</code>: The height of the image used to generate the puzzle.</li>
+<li><code>outline_bbox</code>: The bounding box of the puzzle outline.</li>
+<li><code>puzzle_author</code>: The author of the puzzle.</li>
+<li><code>puzzle_link</code>: The link to the puzzle.</li>
+<li><code>table_width</code>: The width of the table on which the puzzle is displayed.</li>
+<li><code>table_height</code>: The height of the table on which the puzzle is displayed.</li>
+<li><code>piece_properties</code>: An array of objects, each representing a puzzle piece. Each object has the following properties:
+<ul>
+<li><code>id</code>: The ID of the piece.</li>
+<li><code>x</code> and <code>y</code>: The x and y coordinates of the piece on the table.</li>
+<li><code>ox</code> and <code>oy</code>: The original x and y coordinates of the piece in the image.</li>
+<li><code>r</code>: The rotation of the piece.</li>
+<li><code>s</code>: The scale of the piece.</li>
+<li><code>w</code> and <code>h</code>: The width and height of the piece.</li>
+<li><code>rotate</code>: The rotation of the piece.</li>
+<li><code>g</code>: The group of the piece.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><code>adjacent.json</code>: This file contains information about which pieces are adjacent to each other in the original image.</p>
+</li>
+<li>
+<p><code>size-100/</code>: This directory contains data for the puzzle pieces when the puzzle size is set to 100.</p>
+<ul>
+<li>
+<p><code>pieces.json</code>: This file contains information about each piece, including its row and column index in the original image, its rotation (in degrees), and its height and width.</p>
+</li>
+<li>
+<p><code>sprite_with_padding_layout.json</code> and <code>sprite_without_padding_layout.json</code>: These files contain information about how the pieces are laid out in the sprite image.</p>
+</li>
+<li>
+<p><code>masks.json</code> and <code>piece_id_to_mask.json</code>: These files contain information about the masks used to extract each piece from the original image.</p>
+</li>
+<li>
+<p><code>data_uri/</code>: This directory contains Base64 encoded images of each piece.</p>
+</li>
+<li>
+<p><code>mask</code>: Contains the unique masks as <code>bmp</code> files.</p>
+</li>
+<li>
+<p><code>raster</code>: Contains the N segemented pieces of the Jigsaw puzzle as <code>jpg</code> files.</p>
+</li>
+<li>
+<p><code>raster_with_padding</code>: Contains the N segemented pieces of the Jigsaw puzzle as <code>jpg</code> files with padding to rectangular shape.</p>
+</li>
+</ul>
+</li>
+</ul>
+<hr>
+<h2 id="original-imagenet-dataset">Original ImageNet Dataset</h2>
+<p>can be found <a href="https://www.kaggle.com/c/imagenet-object-localization-challenge/data">here</a></p>
+<h3 id="folder-structure">Folder Structure</h3>
+<ol>
+<li><strong>Class Labels</strong>: The class labels are located in the <code>LOC_synset_mapping.txt</code> file. Each line in this file likely contains a class ID and its corresponding label. Example lines:<pre class="hljs"><code><div>n01440764 tench, Tinca tinca
+n01443537 goldfish, Carassius auratus
+n01484850 great white shark, white shark, man-eater, man-eating shark, Carcharodon carcharias
+</div></code></pre>
+</li>
+<li><strong>Splits</strong>: The <code>train</code>, <code>val</code> &amp; <code>test</code> set images are located in <code>.data/imagenet/ILSVRC/Data/CLS-LOC/&lt;split&gt;</code>.
+<ul>
+<li><code>train-folder</code>: Contains the images in subfolders named after the class labels. For example, the first directory is <code>n01440764</code>, and contains images of tench fish. The labels are also provided via <code>.data/imagenet/LOC_train_solution.csv</code> - same format as the validation set.</li>
+<li><code>val-folder</code>: Contains the images directly as <code>ILSVRC2012_val_&lt;id&gt;.JPEG</code>. The labels are located in <code>.data/imagenet/LOC_val_solution.csv</code> and look like this:<pre class="hljs"><code><div>ImageID                , PredictionString
+ILSVRC2012_val_00008726,n02119789 255 142 454 329 n02119789 44 21 322 295
+                        &lt;class id&gt;&lt;BBX          &gt; &lt;class id&gt;&lt;BBX        &gt;
+</div></code></pre>
+This example contains two predictions of the same class.</li>
+<li><code>test-folder</code>: Containes the images directly as <code>ILSVRC2012_test_&lt;id&gt;.JPEG</code></li>
+</ul>
+</li>
+</ol>
+<p><strong>Consideration</strong>:</p>
+<ul>
+<li>We should adhere to the dataset order as per the <code>Loc_&lt;split&gt;_solution.csv</code> files. Meaning: first line --&gt; first sample</li>
+<li>We should transfer the following information into our Jigsaw-Imagenet dataset:
+<ul>
+<li>ImageID</li>
+<li>Class ID (s)</li>
+<li>Number of bbox predictions</li>
+</ul>
+</li>
+<li>We might onyl use the cropped bbox images for the Jigsaw puzzles. And maybe only those that have a certain minimum size.</li>
+<li>In the Jigsaw-Imagenet dataset, we should store the separate pieces in a single file to avoid loading multiple files for each sample. consider formats: <code>HDF5</code> or <code>Parquet</code>.</li>
+<li>We might even save multiple samples in a single file to simplify the data loading process.</li>
+</ul>
+<hr>
+<hr>
+
+</body>
+</html>
