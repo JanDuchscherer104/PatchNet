@@ -1,11 +1,11 @@
-import sys
 from typing import Tuple
 
 import torch
 import torch.nn as nn
-from lib.learnable_fourier_features.positional_encoding import LearnableFourierFeatures
+from torch.functional import F
 from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 
+from . import LearnableFourierFeatures
 from .config import HyperParameters
 
 
@@ -24,14 +24,6 @@ class EfficientNetV2(nn.Module):
         """
         super().__init__()
 
-        assert kwargs.keys() in {
-            "inverted_residual_setting",
-            "dropout",
-            "stochastic_depth_prob",
-            "num_classes",
-            "norm_layer",
-            "last_channel",
-        }
         self.backbone = efficientnet_v2_s(
             weights=EfficientNet_V2_S_Weights.IMAGENET1K_V1, **kwargs
         )
@@ -45,6 +37,7 @@ class EfficientNetV2(nn.Module):
         if not is_trainable:
             for param in self.backbone.parameters():
                 param.requires_grad = False
+        self.backbone.classifier[1].requires_grad = True
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """
@@ -67,19 +60,30 @@ class Transformer(nn.Module):
         nhead=8,
         num_encoder_layers=3,
         num_decoder_layers=3,
+        decoder_dim_feedforward=512,
     ):
         super().__init__()
         # TODO all is args are pretty much arbitrarys
-        self.encoder = nn.TransformerEncoder(
-            nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead),
-            num_layers=num_encoder_layers,
-        )
+        # self.encoder = nn.TransformerEncoder(
+        #     nn.TransformerEncoderLayer(d_model=d_model, nhead=nhead),
+        #     num_layers=num_encoder_layers,
+        # )
         # TODO: Current values are arbitrary
-        self.embedding = LearnableFourierFeatures(
-            pos_dim=2, f_dim=128, h_dim=256, d_dim=64, g_dim=1
+        self.spatial_embedding = LearnableFourierFeatures(
+            pos_dim=2, f_dim=128, h_dim=128, d_dim=d_model, g_dim=1
         )
+        self.rotation_embedding = LearnableFourierFeatures(
+            pos_dim=1, f_dim=64, h_dim=64, d_dim=d_model, g_dim=1
+        )
+        assert d_model % nhead == 0
         self.decoder = nn.TransformerDecoder(
-            nn.TransformerDecoderLayer(d_model=d_model, nhead=nhead),
+            nn.TransformerDecoderLayer(
+                d_model=d_model,
+                nhead=nhead,
+                batch_first=True,
+                dim_feedforward=decoder_dim_feedforward,
+                activation=F.silu,
+            ),
             num_layers=num_decoder_layers,
         )
 
@@ -91,10 +95,16 @@ class Transformer(nn.Module):
         Returns:
             torch.Tensor[torch.float32] - (B, num_pieces, num_features)
         """
-        pos_encoding = self.embedding(pos)
-        src = src + pos_encoding
-        memory = self.encoder(src)
-        decoder_output = self.decoder(memory, memory)
+        spatial_pos = pos[:, :, :2].unsqueeze(-2)
+        rotation_pos = pos[:, :, 2:].unsqueeze(-2)
+
+        spatial_encoding = self.spatial_embedding(spatial_pos)
+        rotation_encoding = self.rotation_embedding(rotation_pos)
+
+        pos_encoding = spatial_encoding + rotation_encoding
+        # Or torch.cat((spatial_encoding, rotation_encoding), dim=-1)
+
+        decoder_output = self.decoder(pos_encoding, src)
         return decoder_output
 
 
@@ -109,8 +119,18 @@ class DynamicPuzzleClassifier(nn.Module):
         self.fc_rotation = nn.Linear(input_features, 4)  # For rotations
 
     def forward(
-        self, x, actual_rows, actual_cols
+        self, x: torch.Tensor, actual_rows: int, actual_cols: int
     ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x: torch.Tensor[torch.float32] - (B, num_pieces, num_features)
+            actual_rows: int - Number of actual rows in the puzzle
+            actual_cols: int - Number of actual columns in the puzzle
+        Returns:
+            row_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_rows)
+            col_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_cols)
+            rotation_logits: torch.Tensor[torch.float32] - (B, num_pieces, 4)
+        """
         row_logits = self.fc_rows(x)
         col_logits = self.fc_cols(x)
         rotation_logits = self.fc_rotation(x)
@@ -136,6 +156,7 @@ class PatchNet(nn.Module):
 
     def __init__(self, hparams: HyperParameters):
         super().__init__()
+        self.hparams = hparams
 
         self.backbone = EfficientNetV2(
             num_features_out=hparams.num_features_out,
@@ -144,85 +165,85 @@ class PatchNet(nn.Module):
 
         self.transformer = Transformer(
             d_model=hparams.num_features_out,
-            nhead=8,
+            nhead=4,
             num_encoder_layers=3,
             num_decoder_layers=3,
         )
 
         self.classifier = DynamicPuzzleClassifier(
-            input_features=1,  # TODO
+            input_features=hparams.num_features_out,
             max_rows=hparams.puzzle_shape[0],  # TODO
             max_cols=hparams.puzzle_shape[1],
         )
 
-    def forward(self, x):
+    def forward(
+        self, x
+    ) -> Tuple[
+        torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ]:
         """
         Args:
             x: torch.Tensor[torch.float32] - (B, num_pieces, 3, H, W)
         Returns:
-            y: torch.Tensor[torch.int64] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
-                row in {0, 1, ..., rows - 1}
-                col in {0, 1, ..., cols - 1}
-                rotation in {0, 1, 2, 3} for 0, 90, 180, 270 degreess
-                num_pieces = rows * cols
+            pos_seq: torch.Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+            unique_indices: torch.Tensor[torch.bool] - (B, num_pieces)
+            logits: Tuple[torch.Tensor[torch.float32], torch.Tensor[torch.float32], torch.Tensor[torch.float32]]
+                row_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_rows)
+                col_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_cols)
+                rotation_logits: torch.Tensor[torch.float32] - (B, num_pieces, 4)
         """
         x = self.backbone(x)
-
-        all_unique_indices = False
+        # TODO: Potential Feature Reduction
+        x.requires_grad = True
         # TODO: create initial positional embedding of shape (num_pieces, 3) [row_idx, col_idx, rotation]
-        initial_pos_embedding = torch.rand(
-            (x.shape[:-1], 3), device=x.device, dtype=x.dtype
+        pos_seq = torch.rand(
+            (*x.shape[:-1], 3), device=x.device, dtype=x.dtype, requires_grad=True
         )
-        while not all_unique_indices:  # TODO: and some_stopping_criterion:
-            x = self.transformer(x, initial_pos_embedding)
-            x = self.classifier(x)
-            unique_indices = self.check_unique_indices(x[:, :, :2])
+        for decoder_iter in range(self.hparams.num_decoder_iters):
+
+            x = self.transformer(x, pos_seq)
+            logits = self.classifier(
+                x,
+                actual_rows=self.hparams.puzzle_shape[0],
+                actual_cols=self.hparams.puzzle_shape[1],
+            )
+
+            pos_seq = (
+                torch.stack([torch.argmax(logit, dim=-1) for logit in logits], dim=-1)
+                .to(torch.float32)
+                .to(x.device)
+            )
+
+            unique_indices = self.check_unique_indices(pos_seq[:, :, :2])
 
             # potentially embed unique_indices into x and pass it through the decoder again!s
             # TODO: How to embed unique_indices into x?
-            all_unique_indices = unique_indices.all().item()
+            if unique_indices.all().item() is True:
+                break
 
-        return x
-
-        # Revision from ChatGPT
-        # def forward(self, x):
-        # # x shape: (B, num_pieces, 3, H, W)
-        # batch_size, num_pieces, _, _, _ = x.shape
-        # x = self.backbone(x.view(-1, *x.shape[2:])).view(batch_size, num_pieces, -1)  # Reshape after backbone
-
-        # # Initialize positions randomly or based on some logic
-        # positions = torch.rand((batch_size, num_pieces, 3), device=x.device, dtype=torch.float32)
-
-        # # Transformer processing
-        # x = self.transformer(x, positions)
-
-        # # Classification for each piece
-        # row_logits, col_logits, rotation_logits = self.classifier(x, self.hparams.puzzle_shape[0], self.hparams.puzzle_shape[1])
-
-        # if self.hparams.is_check_unique:
-        #     # Check for uniqueness of spatial indices (rows and cols)
-        #     unique_indices = self.check_unique_indices(torch.stack((torch.argmax(row_logits, dim=2), torch.argmax(col_logits, dim=2)), dim=2))
-        #     all_unique_indices = unique_indices.all().item()
-        #     if not all_unique_indices:
-        #         # Handle non-unique scenario, maybe re-run with updated positions or apply penalties
-        #         print("Non-unique indices detected, handling required.")
-
-        # return F.log_softmax(row_logits, dim=2), F.log_softmax(col_logits, dim=2), F.log_softmax(rotation_logits, dim=2)
-
-    def check_unique_indices(self, spatial_indices: torch.Tensor) -> torch.Tensor:
-        # Example uniqueness check, you might need more sophisticated logic
-        _, counts = torch.unique(spatial_indices, dim=1, return_counts=True)
-        return counts == 1
+        return pos_seq, unique_indices, logits
 
     def check_unique_indices(self, spatial_indices: torch.Tensor) -> torch.Tensor:
         """
+        Check uniqueness of spatial indices within each batch.
         Args:
             spatial_indices: torch.Tensor[torch.int64] - (B, num_pieces, 2) [row_idx, col_idx]
         Returns:
-                is_unique: torch.Tensor[torch.bool] - (B, num_pieces, )
+            is_unique: torch.Tensor[torch.bool] - (B)
         """
-        return torch.unique(spatial_indices, return_counts=True)[1] == 1
+        # TODO: Check - ChatGPT code
+        batch_size = spatial_indices.size(0)
+        unique_mask = torch.ones(
+            batch_size, dtype=torch.bool, device=spatial_indices.device
+        )
 
+        # Check each batch independently
+        for i in range(batch_size):
+            _, counts = torch.unique(
+                spatial_indices[i], dim=0, return_inverse=False, return_counts=True
+            )
+            unique_mask[i] = (
+                counts == 1
+            ).all()  # All counts must be 1 for unique indices
 
-if __name__ == "__main__":
-    ...
+        return unique_mask

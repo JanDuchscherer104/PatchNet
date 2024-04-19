@@ -128,6 +128,8 @@ class Config(YamlBaseModel):
     is_optuna: bool = False
     pin_memory: bool = True
     max_epochs: int = 50
+    early_stopping_patience: int = 2
+    log_every_n_steps: int = 8
     is_gpu: bool = True
     is_fast_dev_run: bool = False
     active_callbacks: Dict[
@@ -136,19 +138,17 @@ class Config(YamlBaseModel):
             "TQDMProgressBar",
             "EarlyStopping",
             "BatchSizeFinder",
-            "OptunaPruning",
             "LearningRateMonitor",
             "ModelSummary",
         ],
         bool,
     ] = {
-        "ModelCheckpoint": False,
-        "TQDMProgressBar": False,
+        "ModelCheckpoint": True,
+        "TQDMProgressBar": True,
         "EarlyStopping": True,
         "BatchSizeFinder": False,
         "LearningRateMonitor": True,
         "ModelSummary": True,
-        "OptunaPruning": False,
     }
     paths: Paths = Field(default_factory=Paths)
     mlflow_config: MLflowConfig = Field(default_factory=MLflowConfig)
@@ -200,3 +200,4 @@ class HyperParameters(YamlBaseModel):
     # PATCH-NET
     num_features_out: int = 256
     backbone_is_trainable: bool = False
+    num_decoder_iters: int = 8
