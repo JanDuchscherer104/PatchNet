@@ -27,7 +27,7 @@ class LitJigsawModule(pl.LightningModule):
         self.mse_loss = nn.MSELoss(reduction="mean")
         self.ce_loss = nn.CrossEntropyLoss()
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.model(x)
 
     def training_step(
@@ -47,23 +47,23 @@ class LitJigsawModule(pl.LightningModule):
 
     def configure_optimizers(self) -> Dict[str, Any]:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
-        return {
+        optimizers = {
             "optimizer": optimizer,
-            "lr_scheduler": {
+        }
+        if self.config.is_lr_scheduler:
+            optimizers["lr_scheduler"] = {
                 "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
                     optimizer, mode="min", factor=0.1, patience=3
                 ),
                 "interval": "epoch",
                 "monitor": "val_loss",
                 "frequency": 1,
-            },
-        }
+            }
+        return optimizers
 
     def loss_function(
         self,
-        y_pred: Tuple[
-            torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        ],
+        y_pred: torch.Tensor,
         y: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -91,7 +91,12 @@ class LitJigsawModule(pl.LightningModule):
         >>> unique_loss
         tensor(2.)
         """
-        pos_seq, unique_indices, (row_logits, col_logits, rot_logits) = y_pred
+        pos_seq = y_pred[..., :3]
+        unique_indices = y_pred[..., 3].squeeze()
+        max_rows, max_cols = self.hparams.puzzle_shape
+        row_logits = y_pred[..., 4 : 4 + max_rows]
+        col_logits = y_pred[..., 4 + max_rows : 4 + max_rows + max_cols]
+        rot_logits = y_pred[..., 4 + max_rows + max_cols :]
 
         # Unpack true values, calculate MSE loss for row / col indices
         y_rows, y_cols, y_rot = y[:, :, 0], y[:, :, 1], y[:, :, 2]
@@ -112,3 +117,22 @@ class LitJigsawModule(pl.LightningModule):
         )
 
         return total_loss
+
+    def make_graph(self, xy: Tuple[torch.Tensor, torch.Tensor]) -> None:
+        from torch.utils.tensorboard import SummaryWriter
+
+        writer = SummaryWriter()
+        writer.add_graph(
+            self.model, input_to_model=xy[0], verbose=True, use_strict_trace=False
+        )
+        writer.close()
+
+    def torchviz_model(self, xy: Tuple[torch.Tensor, torch.Tensor]) -> None:
+        from torchviz import make_dot
+
+        make_dot(self.model(xy[0]), params=dict(self.model.named_parameters())).render(
+            self.model.__class__.__name__,
+            directory=self.config.paths.model_viz_dir,
+            format="svg",
+            cleanup=True,
+        )
