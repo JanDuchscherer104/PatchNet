@@ -1,6 +1,6 @@
 [submodule "lib/piecemaker"]
 	path = lib/piecemaker
-	url = https://github.com/jkenlooper/piecemaker.git
+	url = git@github.com:JanDuchscherer104/piecemaker.git
 [submodule "src/dl_solver/lib/Learnable-Fourier-Features"]
 	path = src/dl_solver/lib/lib/Learnable-Fourier-Features
 	url = git@github.com:JHLew/Learnable-Fourier-Features.git
