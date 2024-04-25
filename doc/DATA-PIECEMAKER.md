@@ -270,4 +270,3 @@ can be found [here](https://www.kaggle.com/c/imagenet-object-localization-challe
 - We might even save multiple samples in a single file to simplify the data loading process.
 
 ---
----
