@@ -1,4 +1,6 @@
-from lib.learnable_fourier_features.positional_encoding import LearnableFourierFeatures
+from src.dl_solver.lib.learnable_fourier_features.positional_encoding import (
+    LearnableFourierFeatures,
+)
 
 from .config import Config, HyperParameters, PiecemakerConfig
 from .jigsaw_dataset import JigsawDataset
