@@ -86,7 +86,7 @@ class LitJigsawDatamodule(pl.LightningDataModule):
                     else "val" if stage == "validate" else stage
                 )
                 ds: JigsawDataset = getattr(self, f"jigsaw_{split}")
-                ds._refurb_df(is_save_df=True)
+                ds._refurb_df(is_save_df=False)
 
             except Exception as e:
                 print(f"Error setting up {stage} dataset: {e}")

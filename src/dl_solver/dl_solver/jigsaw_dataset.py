@@ -97,9 +97,11 @@ class JigsawDataset(Dataset):
             idx = idx.tolist()
 
         row = self.filtered_df.iloc[idx]
-        sample_dir = (
-            self.dataset_dir / "images" / row["class_id"] / str(row["num_sample"])
-        )
+        class_dir = self.dataset_dir / "images" / self.split / row["class_id"]
+        if self.split == "train":
+            sample_dir = class_dir / str(row["num_sample"])
+        else:
+            sample_dir = class_dir / str(row["num_sample"]).zfill(8)
 
         # Load labels
         labels = np.load(sample_dir / "labels.npy")
@@ -200,36 +202,21 @@ class JigsawDataset(Dataset):
 
     def _refurb_df(self, is_save_df: bool = False) -> None:
         # check if each file exists
-        rows_to_drop = []
-        for index, row in self.df.iterrows():
-            hdf5_filepath = (
-                self.dataset_dir
-                / "images"
-                / row["class_id"]
-                / f"{int(row['num_sample'])}.hdf5"
-            )
-            if not hdf5_filepath.exists():
-                rows_to_drop.append(index)
-
-        self.df = (
-            self.df.drop(rows_to_drop)
-            .reset_index(drop=True)
-            .astype(
-                {
-                    "min_width": "int16",
-                    "min_height": "int16",
-                    "max_width": "int16",
-                    "max_height": "int16",
-                    "width": "int16",
-                    "height": "int16",
-                    "rows": "uint8",
-                    "cols": "uint8",
-                    "image_id": str,
-                    "class_id": str,
-                    "num_sample": "uint32",
-                    "stochastic_nub": "bool",
-                }
-            )
+        self.df = self.df.reset_index(drop=True).astype(
+            {
+                "min_width": "int16",
+                "min_height": "int16",
+                "max_width": "int16",
+                "max_height": "int16",
+                "width": "int16",
+                "height": "int16",
+                "rows": "uint8",
+                "cols": "uint8",
+                "image_id": str,
+                "class_id": str,
+                "num_sample": "uint32",
+                "stochastic_nub": "bool",
+            }
         )
 
         if is_save_df:

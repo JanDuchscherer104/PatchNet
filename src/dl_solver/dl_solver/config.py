@@ -189,6 +189,7 @@ class Config(YamlBaseModel):
         )
 
         if self.num_workers is None and self.is_multiproc:
+            # TODO: Should we use #logical or #logical - 1?
             self.num_workers = psutil.cpu_count(logical=True)
 
         self.piecemaker_config.jigsaw_dir = self.paths.jigsaw_dir
