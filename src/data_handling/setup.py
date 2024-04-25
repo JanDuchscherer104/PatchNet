@@ -10,6 +10,5 @@ setup(
         "polars",
         "opencv-python",
         "numpy",
-        "swifter",
     ],
 )
