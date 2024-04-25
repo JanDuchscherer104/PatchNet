@@ -10,6 +10,8 @@
 - [x] Store the dataset in a more efficient format (e.g. HDF5), to enable batched loading.
 - [ ] Generate `val` and `test` datasets.
 - [ ] Revise `Jigsaw-Dataset` to **not** store all images belonging to a sample as `np.ndarray` in `hdf5` files, but as `png` or `jpg` in a shared directory.
+- [ ] Find optimal `width` and `height` for the puzzle pieces.
+- [ ] Improve metadata handling
 
 ### Imagenet ~ **DONE**
 - We should adhere to the dataset order as per the `Loc_<split>_solution.csv` files. Meaning: first line --> first sample

@@ -33,8 +33,9 @@ $$
 $$
 
 - ~~**Classification Heads**: Three heads (`nn.Linear`) for predicting the location and orientation of puzzle pieces. Handling varying numbers of puzzle pieces is a future consideration.~~
-- Handling a varying number of rows and columns can be done through masking ~ [torch.masked](https://pytorch.org/docs/stable/masked.html)
-- Instead of static classification heads, directly use the Transformer's output or a vocabulary for the position and rotation indices.
+- Handling a varying number of rows and columns can be done through masking ~ [torch.masked](https://pytorch.org/docs/stable/masked.html).
+- **Embedding of #Rows & #Cols**: Use a `nn.Embedding` layer for the number of rows and columns.
+- Alternative: Instead of static classification heads, use the Transformer's output or a vocabulary for the position and rotation indices.
 - **Loss Calculation**: Combines $\mathcal{L}_2$ for position and $\mathcal{L}_{\text{CE}}$ for orientation.
 
 $$
