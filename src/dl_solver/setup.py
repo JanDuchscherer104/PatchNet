@@ -14,7 +14,6 @@ setup(
         "torchaudio",
         "pytorch-lightning",
         "torchmetrics",
-        "polars",
         "numpy",
         "opencv-python",
     ],
