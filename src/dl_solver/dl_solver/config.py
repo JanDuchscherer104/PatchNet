@@ -6,6 +6,7 @@ import mlflow
 import psutil
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
+from torchviz import make_dot
 from typing_extensions import Annotated
 
 T = TypeVar("T", bound="YamlBaseModel")
@@ -31,15 +32,22 @@ class Paths(YamlBaseModel):
     tb_logs: Annotated[
         Path, Field(default="src/solver/.logs/tb_logs", validate_default=True)
     ]
+    model_viz_dir: Annotated[
+        Path, Field(default="src/solver/.logs/model_viz", validate_default=True)
+    ]
     mlflow_uri: Annotated[
         str, Field(default="src/solver/.logs/mlflow_logs/mlflow", validate_default=True)
     ]
     jigsaw_dir: Annotated[Path, Field(default=".data/jigsaw", validate_default=True)]
+    semantic_label_map: Annotated[
+        Path, Field(default=".data/jigsaw/imagenet_semantic_label_map.txt")
+    ]
 
     @field_validator(
         "imagenet_dir",
         "checkpoints",
         "tb_logs",
+        "model_viz_dir",
         "jigsaw_dir",
     )
     @classmethod
@@ -126,6 +134,7 @@ class Config(YamlBaseModel):
     is_multiproc: bool = True
     num_workers: Optional[int] = None
     is_optuna: bool = False
+    is_lr_scheduler: bool = False
     pin_memory: bool = True
     max_epochs: int = 50
     early_stopping_patience: int = 2
@@ -147,7 +156,7 @@ class Config(YamlBaseModel):
         "TQDMProgressBar": True,
         "EarlyStopping": True,
         "BatchSizeFinder": False,
-        "LearningRateMonitor": True,
+        "LearningRateMonitor": False,
         "ModelSummary": True,
     }
     paths: Paths = Field(default_factory=Paths)
