@@ -1,4 +1,4 @@
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import pytorch_lightning as pl
 import torch
@@ -27,14 +27,16 @@ class LitJigsawModule(pl.LightningModule):
         self.mse_loss = nn.MSELoss(reduction="mean")
         self.ce_loss = nn.CrossEntropyLoss()
 
-    def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return self.model(x)
+    def forward(
+        self, x: torch.Tensor, y: Optional[torch.Tensor] = None, *args, **kwargs
+    ) -> torch.Tensor:
+        return self.model(x, y)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, y = batch
-        loss = self.loss_function(self(x), y)
+        loss = self.loss_function(self(x, y), y)
         self.log("train_loss", loss)
         return loss
 
@@ -42,7 +44,7 @@ class LitJigsawModule(pl.LightningModule):
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
         x, y = batch
-        loss = self.loss_function(self(x), y)
+        loss = self.loss_function(self(x, None), y)
         self.log("val_loss", loss)
 
     def configure_optimizers(self) -> Dict[str, Any]:
@@ -63,7 +65,9 @@ class LitJigsawModule(pl.LightningModule):
 
     def loss_function(
         self,
-        y_pred: torch.Tensor,
+        y_pred: Tuple[
+            torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+        ],
         y: torch.Tensor,
     ) -> torch.Tensor:
         """
@@ -91,12 +95,7 @@ class LitJigsawModule(pl.LightningModule):
         >>> unique_loss
         tensor(2.)
         """
-        pos_seq = y_pred[..., :3]
-        unique_indices = y_pred[..., 3].squeeze()
-        max_rows, max_cols = self.hparams.puzzle_shape
-        row_logits = y_pred[..., 4 : 4 + max_rows]
-        col_logits = y_pred[..., 4 + max_rows : 4 + max_rows + max_cols]
-        rot_logits = y_pred[..., 4 + max_rows + max_cols :]
+        pos_seq, unique_indices, (row_logits, col_logits, rot_logits) = y_pred
 
         # Unpack true values, calculate MSE loss for row / col indices
         y_rows, y_cols, y_rot = y[:, :, 0], y[:, :, 1], y[:, :, 2]

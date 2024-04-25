@@ -5,36 +5,9 @@ import torch
 import torch.nn as nn
 from torch.functional import F
 from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
-from transformers import BertModel, BertTokenizer
 
 from . import LearnableFourierFeatures
 from .config import HyperParameters
-
-
-class ImageNetClassEmbedding(nn.Module):
-    def __init__(self, model_name="bert-base-uncased", freeze=True):
-        super().__init__()
-        self.tokenizer = BertTokenizer.from_pretrained(model_name)
-        self.bert = BertModel.from_pretrained(model_name)
-        if freeze:
-            for param in self.bert.parameters():
-                param.requires_grad = False
-
-    def forward(self, class_labels):
-        """
-        Args:
-            class_labels (List[str]): List of class labels
-
-        Returns:
-            torch.Tensor: Tensor of embeddings
-        """
-        inputs = self.tokenizer(
-            class_labels, return_tensors="pt", padding=True, truncation=True
-        )
-        outputs = self.bert(**inputs)
-        # We take the embeddings from the [CLS] token which is a common practice.
-        embeddings = outputs.last_hidden_state[:, 0, :]
-        return embeddings
 
 
 class EfficientNetV2(nn.Module):
@@ -202,76 +175,97 @@ class PatchNet(nn.Module):
     transformer: Transformer
     classifier: DynamicPuzzleClassifier
 
-    def __init__(self, hparams, pretrained_embedding_model="bert-base-uncased"):
+    def __init__(self, hparams: HyperParameters):
         super().__init__()
         self.hparams = hparams
 
-        # Network components
         self.backbone = EfficientNetV2(
             num_features_out=hparams.num_features_out,
             is_trainable=hparams.backbone_is_trainable,
         )
+
         self.transformer = Transformer(
             d_model=hparams.num_features_out,
             nhead=4,
             num_encoder_layers=3,
             num_decoder_layers=3,
         )
+
         self.classifier = DynamicPuzzleClassifier(
-            input_features=hparams.num_features_out,  # Assuming embeddings are handled inside the transformer
-            max_rows=hparams.puzzle_shape[0],
+            input_features=hparams.num_features_out,
+            max_rows=hparams.puzzle_shape[0],  # TODO
             max_cols=hparams.puzzle_shape[1],
         )
-        self.class_embeddings = ImageNetClassEmbedding(pretrained_embedding_model)
 
-    def forward(self, x, class_labels, true_pos_seq=None):
+    def forward(
+        self, x: torch.Tensor, true_pos_seq: Optional[torch.Tensor] = None
+    ) -> Tuple[
+        torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
+    ]:
         """
         Args:
-            x (torch.Tensor): Image tensor.
-            class_labels (List[str]): Class labels for each image in the batch.
-            true_pos_seq (Optional[torch.Tensor]): True position sequences for training.
+            x: torch.Tensor[torch.float32] - (B, num_pieces, 3, H, W)
+        Returns:
+            pos_seq: torch.Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+            unique_indices: torch.Tensor[torch.bool] - (B, num_pieces)
+            logits: Tuple[torch.Tensor[torch.float32], torch.Tensor[torch.float32], torch.Tensor[torch.float32]]
+                row_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_rows)
+                col_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_cols)
+                rotation_logits: torch.Tensor[torch.float32] - (B, num_pieces, 4)
         """
-        embeddings = self.class_embeddings(
-            class_labels
-        )  # Get embeddings for each class label
         x = self.backbone(x)
-
-        # Concatenate class embeddings along the feature dimension
-        embeddings = embeddings.unsqueeze(1).repeat(
-            1, x.size(1), 1
-        )  # Ensure correct shape
-        x = torch.cat((x, embeddings), dim=-1)
-
+        # TODO: Potential Feature Reduction
+        x.requires_grad = True
+        # TODO: create initial positional embedding of shape (num_pieces, 3) [row_idx, col_idx, rotation]
         pos_seq = (
             true_pos_seq.to(torch.float32).to(x.device)
-            if self.training and true_pos_seq is not None
+            if self.training
             else torch.rand(
-                (*x.shape[:-1], 3), device=x.device, dtype=x.dtype, requires_grad=True
+                (*x.shape[:-1], 3),
+                device=x.device,
+                dtype=x.dtype,
+                requires_grad=True,
             )
         )
 
         if self.training:
-            x, _ = self.transformer(x, pos_seq)
-            logits = self.classifier(
-                x, self.hparams.puzzle_shape[0], self.hparams.puzzle_shape[1]
-            )
+            pos_seq, logits, _ = self._forward_step(x, pos_seq)
         else:
             encoder_memory = None
             for _ in range(self.hparams.num_decoder_iters):
-                x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
-                logits = self.classifier(
-                    x, self.hparams.puzzle_shape[0], self.hparams.puzzle_shape[1]
+                pos_seq, logits, encoder_memory = self._forward_step(
+                    x, pos_seq, encoder_memory
                 )
-                pos_seq = (
-                    torch.stack(
-                        [torch.argmax(logit, dim=-1) for logit in logits], dim=-1
-                    )
-                    .to(torch.float32)
-                    .to(x.device)
-                )
-
         unique_indices = self.check_unique_indices(pos_seq[:, :, :2])
+
+        # potentially embed unique_indices into x and pass it through the decoder again!s
+        # TODO: How to embed unique_indices into x?
+
         return pos_seq, unique_indices, logits
+
+    def _forward_step(
+        self,
+        x: torch.Tensor,
+        pos_seq: torch.Tensor,
+        encoder_memory: Optional[torch.Tensor] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+        """
+        Args:
+            x: torch.Tensor[torch.float32] - (B, num_pieces, 3, H, W)
+        Returns:
+            pos_seq: torch.Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+            logits: Tuple[torch.Tensor[torch.float32], torch.Tensor[torch.float32], torch.Tensor[torch.float32]]
+            encoder_memory: torch.Tensor[torch.float32] - (B, num_pieces, num_features)
+        """
+        x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
+        logits = self.classifier(x, *self.hparams.puzzle_shape)
+        pos_seq = (
+            torch.stack([torch.argmax(logit, dim=-1) for logit in logits], dim=-1)
+            .to(torch.float32)
+            .to(x.device)
+        )
+
+        return pos_seq, logits, encoder_memory
 
     def check_unique_indices(self, spatial_indices: torch.Tensor) -> torch.Tensor:
         """
