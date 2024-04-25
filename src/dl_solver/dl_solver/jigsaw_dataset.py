@@ -107,7 +107,7 @@ class JigsawDataset(Dataset):
         # TODO: load the puzzle pieces according to the id in labels!!
         # Load puzzle pieces
         puzzle_pieces = {
-            f"piece_{i}.png": np.array(Image.open(sample_dir / f"piece_{i}.png"))
+            f"piece_{i}": np.array(Image.open(sample_dir / f"piece_{i}.png"))
             for i in range(len(labels))
         }
 
