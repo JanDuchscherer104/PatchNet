@@ -6,7 +6,13 @@ torchvision
 torchaudio
 pytorch-lightning
 torchmetrics
+tensorboard
 pandas
-swifter
+pandarallel
 opencv-python
+torchviz
+pillow
 numpy
+h5py
+albumentations
+seaborn
