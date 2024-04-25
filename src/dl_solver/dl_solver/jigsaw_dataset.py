@@ -81,7 +81,18 @@ class JigsawDataset(Dataset):
     def __len__(self) -> int:
         return len(self.filtered_df)
 
-    def __getitem__(self, idx):
+    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Returns
+            Tuple[
+                X: torch.Tensor[torch.float32] - (num_pieces, 3, H, W)
+                y: torch.Tensor[torch.int64] - (num_pieces, 3) [row_idx, col_idx, rotation]
+                    row in {0, 1, ..., rows - 1}
+                    col in {0, 1, ..., cols - 1}
+                    rotation in {0, 1, 2, 3}
+                    num_pieces = rows * cols
+            ]
+        """
         if torch.is_tensor(idx):
             idx = idx.tolist()
 
@@ -93,13 +104,12 @@ class JigsawDataset(Dataset):
         # Load labels
         labels = np.load(sample_dir / "labels.npy")
 
+        # TODO: load the puzzle pieces according to the id in labels!!
         # Load puzzle pieces
-        puzzle_pieces = [
-            Image.open(sample_dir / f"piece_{i}.png") for i in range(len(labels))
-        ]
-        puzzle_pieces = [
-            self.transforms(puzzle_piece) for puzzle_piece in puzzle_pieces
-        ]
+        puzzle_pieces = {
+            f"piece_{i}.png": np.array(Image.open(sample_dir / f"piece_{i}.png"))
+            for i in range(len(labels))
+        }
 
         return self.transforms(puzzle_pieces, labels, self.is_train)
 
