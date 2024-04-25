@@ -143,24 +143,22 @@ class SmolPiecemaker:
             max_width = 0
             max_height = 0
 
-            with h5py.File((cls_dir / sample_number).with_suffix(".hdf5"), "w") as f:
-                for png_file in segments_dir.glob("*.jpg"):
-                    img = np.array(Image.open(png_file))
-                    f.create_dataset(f"piece_{png_file.stem}", data=img)
+            sample_dir = self.config.jigsaw_dir / "images" / cls_dir / sample_number
+            if sample_dir.exists():
+                return
+            sample_dir.mkdir(parents=True, exist_ok=True)
 
-                    max_width = max(max_width, img.shape[1])
-                    max_height = max(max_height, img.shape[0])
-                    min_width = min(max_width, img.shape[1])
-                    min_height = min(max_height, img.shape[0])
+            for png_file in segments_dir.glob("*.jpg"):
+                img = np.array(Image.open(png_file))
 
-                f.attrs["piece_count"] = piece_count
-                f.attrs["rows"] = rows
-                f.attrs["cols"] = cols
-                f.attrs["max_width"] = max_width
-                f.attrs["max_height"] = max_height
-                f.attrs["min_width"] = min_width
-                f.attrs["min_height"] = min_height
-                f.create_dataset("id_row_col", data=id_row_col)
+                max_width = max(max_width, img.shape[1])
+                max_height = max(max_height, img.shape[0])
+                min_width = min(max_width, img.shape[1])
+                min_height = min(max_height, img.shape[0])
+
+                img.save((sample_dir / f"piece_{png_file.stem}").with_suffix(".png"))
+
+            np.save(sample_dir / "labels.npy", id_row_col)
 
             return (
                 rows,
