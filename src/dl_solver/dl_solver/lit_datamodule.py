@@ -77,6 +77,7 @@ class LitJigsawDatamodule(pl.LightningDataModule):
         )
 
     def prepare_data(self) -> None:
+        return
         for stage in ("fit", "validate", "test"):
             try:
                 self.setup(stage)

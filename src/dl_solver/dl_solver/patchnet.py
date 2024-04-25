@@ -6,8 +6,8 @@ import torch.nn as nn
 from torch.functional import F
 from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 
-from . import LearnableFourierFeatures
 from .config import HyperParameters
+from .positional_encoding import LearnableFourierFeatures
 
 
 class EfficientNetV2(nn.Module):
@@ -238,7 +238,7 @@ class PatchNet(nn.Module):
                 )
         unique_indices = self.check_unique_indices(pos_seq[:, :, :2])
 
-        # potentially embed unique_indices into x and pass it through the decoder again!s
+        # potentially embed unique_indices into x and pass it through the decoder again!
         # TODO: How to embed unique_indices into x?
 
         return pos_seq, unique_indices, logits

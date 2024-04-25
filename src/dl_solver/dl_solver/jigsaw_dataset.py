@@ -50,13 +50,13 @@ class JigsawDataset(Dataset):
         self.__filtered_df: Optional[pd.DataFrame] = None
 
     @property
-    def csv_file_path(self) -> Path:
-        return self.dataset_dir / f"{self.split}_jigsaw.csv"
+    def pickle_file_path(self) -> Path:
+        return self.dataset_dir / f"{self.split}_jigsaw.pkl"
 
     @property
     def df(self) -> pd.DataFrame:
         if self.__df is None:
-            self.__df = pd.read_csv(self.csv_file_path)
+            self.__df = pd.read_pickle(self.pickle_file_path)
         return self.__df
 
     @df.setter
@@ -223,7 +223,7 @@ class JigsawDataset(Dataset):
             self.save_df()
 
     def save_df(self) -> None:
-        self.df.to_csv(self.csv_file_path, index=False)
+        self.df.to_pickle(self.pickle_file_path)
 
     def transform_storage_format(self):
         pandarallel.initialize(progress_bar=True, nb_workers=16)

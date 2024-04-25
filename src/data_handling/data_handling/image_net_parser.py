@@ -56,6 +56,7 @@ class ImageNetParser:
         df[["class_id", "num_sample"]] = df["image_id"].str.rsplit(
             "_", n=1, expand=True
         )
+
         if self.split != "test":
             df = df.assign(class_id=df["PredictionString"].str.extract(r"(n\d{8})")[0])
         return df
@@ -145,8 +146,8 @@ class ImageNetParser:
         except Exception as e:
             print(f"Error: {e}")
 
-        csv_path = self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv"
-        if csv_path.exists():
+        pkl_path = self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.pkl"
+        if pkl_path.exists():
             df = (
                 self.existing_df()
                 .set_index("image_id")
@@ -154,21 +155,22 @@ class ImageNetParser:
                 .reset_index()
             )
 
-        df.to_csv(self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv")
+        df.to_pickle(self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.pkl")
 
         return df
 
     def existing_df(self) -> pd.DataFrame:
         if self.__existing_df is None:
             try:
-                self.__existing_df = pd.read_csv(
-                    self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv"
+                self.__existing_df = pd.read_pickle(
+                    self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.pkl"
                 )
             except FileNotFoundError:
                 return pd.DataFrame()
         return self.__existing_df
 
     def add_missing_info(self) -> pd.DataFrame:
+        raise NotImplementedError()
         files = list(Path(self.config.paths.jigsaw_dir / "images").glob("**/*.hdf5"))
         if self.config.is_multiproc:
             with ProcessPoolExecutor(max_workers=self.config.num_workers) as executor:
@@ -184,6 +186,7 @@ class ImageNetParser:
         return df
 
     def process_file(self, file: Path) -> dict:
+        raise NotImplementedError()
         try:
             with h5py.File(file, "r") as f:
                 attrs = f.attrs
