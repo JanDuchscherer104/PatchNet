@@ -2,7 +2,7 @@ import json
 import random
 import tempfile
 from pathlib import Path
-from typing import Tuple
+from typing import Literal, Tuple
 
 import h5py
 import numpy as np
@@ -19,11 +19,21 @@ from dl_solver import PiecemakerConfig
 class SmolPiecemaker:
     config: PiecemakerConfig
 
-    def __init__(self, config: PiecemakerConfig) -> None:
+    def __init__(
+        self,
+        config: PiecemakerConfig,
+        split: Literal["train", "val", "test"],
+    ) -> None:
         self.config = config
+        self.split = split
 
     def conv_to_jigsaw(
-        self, img_path: Path, height: int, width: int, is_new_mask: bool = True
+        self,
+        img_path: Path,
+        class_id: str,
+        sample_id: int,
+        height: int,
+        width: int,
     ) -> Tuple[int, int, int, int, int, int, bool]:
 
         scaled_sizes = set(self.config.scaled_sizes)
@@ -136,14 +146,21 @@ class SmolPiecemaker:
             id_row_col = np.vstack((ids, row_indices, col_indices)).T
 
             segments_dir = full_size_dir / "raster_with_padding"
-            class_id, sample_number = identifier.split("_")
-            cls_dir = self.config.jigsaw_dir / "images" / class_id
-            cls_dir.mkdir(parents=True, exist_ok=True)
+            # if self.split == "train":
+            #     class_id, sample_number = identifier.split("_")
+            # else:
+            # sample_number =
 
             max_width = 0
             max_height = 0
 
-            sample_dir = self.config.jigsaw_dir / "images" / cls_dir / sample_number
+            sample_dir = (
+                self.config.jigsaw_dir
+                / "images"
+                / self.split
+                / class_id
+                / str(sample_id)
+            )
             if sample_dir.exists():
                 return
             sample_dir.mkdir(parents=True, exist_ok=True)
@@ -156,7 +173,9 @@ class SmolPiecemaker:
                 min_width = min(max_width, img.shape[1])
                 min_height = min(max_height, img.shape[0])
 
-                img.save((sample_dir / f"piece_{png_file.stem}").with_suffix(".png"))
+                Image.fromarray(img).save(
+                    (sample_dir / f"piece_{png_file.stem}").with_suffix(".png")
+                )
 
             np.save(sample_dir / "labels.npy", id_row_col)
 

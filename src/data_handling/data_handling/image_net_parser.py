@@ -18,12 +18,16 @@ class ImageNetParser:
     config: Config
     piecemaker: SmolPiecemaker
 
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, split: Literal["train", "val", "test"]) -> None:
         self.config = config
+        self.split = split
+
         self.imagenet_dir = self.config.paths.imagenet_dir
         self.synset_mapping_file: Path = self.imagenet_dir / "LOC_synset_mapping.txt"
 
-        self.piecemaker = SmolPiecemaker(self.config.piecemaker_config)
+        self.piecemaker = SmolPiecemaker(
+            self.config.piecemaker_config, split=self.split
+        )
         self.__existing_df: Optional[pd.DataFrame] = None
 
         if self.config.is_multiproc:
@@ -46,18 +50,18 @@ class ImageNetParser:
         )
         return df
 
-    def read_solution_csv(self, split: str) -> pd.DataFrame:
-        solution_file: Path = self.imagenet_dir / f"LOC_{split}_solution.csv"
+    def read_solution_csv(self) -> pd.DataFrame:
+        solution_file: Path = self.imagenet_dir / f"LOC_{self.split}_solution.csv"
         df = pd.read_csv(solution_file).rename(columns={"ImageId": "image_id"})
         df[["class_id", "num_sample"]] = df["image_id"].str.rsplit(
             "_", n=1, expand=True
         )
+        if self.split != "test":
+            df = df.assign(class_id=df["PredictionString"].str.extract(r"(n\d{8})")[0])
         return df
 
-    def to_jigsaw(
-        self, df: pd.DataFrame, split: Literal["train", "val", "test"]
-    ) -> pd.DataFrame:
-        images_dir = self.imagenet_dir / f"ILSVRC/Data/CLS-LOC/{split}"
+    def to_jigsaw(self, df: pd.DataFrame) -> pd.DataFrame:
+        images_dir = self.imagenet_dir / f"ILSVRC/Data/CLS-LOC/{self.split}"
         assert images_dir.exists()
 
         df.assign(
@@ -85,11 +89,13 @@ class ImageNetParser:
         )
 
         def make_jigsaw(row: pd.Series) -> pd.Series:
-            img_pth = (
-                images_dir
-                / Path(row["class_id"])
-                / Path(row["image_id"]).with_suffix(".JPEG")
-            )
+            match self.split:
+                case "train":
+                    img_pth = (
+                        images_dir / str(row["class_id"]) / str(row["image_id"])
+                    ).with_suffix(".JPEG")
+                case "val" | "test":
+                    img_pth = (images_dir / str(row["image_id"])).with_suffix(".JPEG")
             try:
                 assert img_pth.exists(), f"Image {img_pth} does not exist."
                 with Image.open(img_pth) as img:
@@ -104,7 +110,13 @@ class ImageNetParser:
                     row["min_width"],
                     row["min_height"],
                     row["stochastic_nub"],
-                ) = self.piecemaker.conv_to_jigsaw(img_pth, width=width, height=height)
+                ) = self.piecemaker.conv_to_jigsaw(
+                    img_pth,
+                    str(row["class_id"]),
+                    str(row["num_sample"]),
+                    width=width,
+                    height=height,
+                )
             except Exception as e:
                 print(f"Error: {e}")
                 (
@@ -120,7 +132,7 @@ class ImageNetParser:
                 ) = [None] * 9
             return row
 
-        existing_df = self.existing_df(split)
+        existing_df = self.existing_df()
         if not existing_df.empty:
             df = df[~df["image_id"].isin(existing_df["image_id"])]
 
@@ -133,24 +145,24 @@ class ImageNetParser:
         except Exception as e:
             print(f"Error: {e}")
 
-        csv_path = self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv"
+        csv_path = self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv"
         if csv_path.exists():
             df = (
-                self.existing_df(split)
+                self.existing_df()
                 .set_index("image_id")
                 .combine_first(df.set_index("image_id"))
                 .reset_index()
             )
 
-        df.to_csv(self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv")
+        df.to_csv(self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv")
 
         return df
 
-    def existing_df(self, split: Literal["train", "val", "test"]) -> pd.DataFrame:
+    def existing_df(self) -> pd.DataFrame:
         if self.__existing_df is None:
             try:
                 self.__existing_df = pd.read_csv(
-                    self.config.paths.jigsaw_dir / f"{split}_jigsaw.csv"
+                    self.config.paths.jigsaw_dir / f"{self.split}_jigsaw.csv"
                 )
             except FileNotFoundError:
                 return pd.DataFrame()
