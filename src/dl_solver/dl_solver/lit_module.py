@@ -75,9 +75,13 @@ class LitJigsawModule(pl.LightningModule):
 
         Args:
             y_pred: a tuple containing
-                    - pos_seq: Tensor of predicted positions, shape (B, num_pieces, 3)
-                    - (row_logits, col_logits, rot_logits): each a Tensor of shape (B, num_pieces, num_classes)
-            y: Tensor of true labels of shape (B, 12, 3)
+                pos_seq: torch.Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+                unique_indices: torch.Tensor[torch.bool] - (B, num_pieces)
+                logits: Tuple[torch.Tensor[torch.float32], torch.Tensor[torch.float32], torch.Tensor[torch.float32]]
+                    row_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_rows)
+                    col_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_cols)
+                    rotation_logits: torch.Tensor[torch.float32] - (B, num_pieces, 3)
+            y: Tensor of true labels of shape (B, 12, 3) [row~_idx, col_idx, rotation]
 
         Returns:
             Total loss as a scalar tensor.
