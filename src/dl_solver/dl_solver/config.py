@@ -6,7 +6,6 @@ import mlflow
 import psutil
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 from pydantic_yaml import parse_yaml_file_as, to_yaml_file
-from torchviz import make_dot
 from typing_extensions import Annotated
 
 T = TypeVar("T", bound="YamlBaseModel")
@@ -159,6 +158,7 @@ class Config(YamlBaseModel):
         "LearningRateMonitor": False,
         "ModelSummary": True,
     }
+    matmul_precision: Literal["medium", "high"] = "medium"
     paths: Paths = Field(default_factory=Paths)
     mlflow_config: MLflowConfig = Field(default_factory=MLflowConfig)
     piecemaker_config: PiecemakerConfig = Field(default_factory=PiecemakerConfig)
@@ -184,9 +184,10 @@ class Config(YamlBaseModel):
             last_run_num = int(last_run_label.split("-")[0][1:])
             next_run_num = last_run_num + 1
 
-        self.mlflow_config.run_name = (
-            f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
-        )
+        if self.mlflow_config.run_name is None:
+            self.mlflow_config.run_name = (
+                f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
+            )
 
         if self.num_workers is None and self.is_multiproc:
             # TODO: Should we use #logical or #logical - 1?
@@ -194,20 +195,24 @@ class Config(YamlBaseModel):
 
         self.piecemaker_config.jigsaw_dir = self.paths.jigsaw_dir
 
+        (self.paths.tb_logs / self.mlflow_config.run_name).mkdir(
+            parents=True, exist_ok=True
+        )
+
         return self
 
 
 class HyperParameters(YamlBaseModel):
-    batch_size: int = 8
+    batch_size: int = 512
     learning_rate: float = 1e-3
     weight_decay: float = 1e-4
     num_epochs: int = 50
 
     puzzle_shape: Tuple[int, int] = (3, 4)
-    segment_shape: Tuple[int, int] = (64, 64)
+    segment_shape: Tuple[int, int] = (32, 32)
     rotation_loss_weight: float = 0.1
 
     # PATCH-NET
-    num_features_out: int = 256
+    num_features_out: int = 512
     backbone_is_trainable: bool = False
-    num_decoder_iters: int = 8
+    num_decoder_iters: int = 12

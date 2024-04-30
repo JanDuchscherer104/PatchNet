@@ -1,7 +1,10 @@
 from typing import Any, Dict, Optional, Tuple
 
+import numpy as np
 import pytorch_lightning as pl
 import torch
+from matplotlib import pyplot as plt
+from pytorch_lightning.loggers import TensorBoardLogger
 from torch import nn
 
 from .config import Config, HyperParameters
@@ -22,30 +25,115 @@ class LitJigsawModule(pl.LightningModule):
         self.config = config
         self.save_hyperparameters(hparams.model_dump())
 
-        self.model = PatchNet(hparams)
+        self.model = PatchNet(hparams).to(self.device)
 
         self.mse_loss = nn.MSELoss(reduction="mean")
         self.ce_loss = nn.CrossEntropyLoss()
 
+        self.cached_sample: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+
+        torch.set_float32_matmul_precision(self.config.matmul_precision)
+
     def forward(
         self, x: torch.Tensor, y: Optional[torch.Tensor] = None, *args, **kwargs
     ) -> torch.Tensor:
-        return self.model(x, y)
+        return self.model(x, y if self.training else None)
 
     def training_step(
         self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> torch.Tensor:
         x, y = batch
-        loss = self.loss_function(self(x, y), y)
-        self.log("train_loss", loss)
-        return loss
+        y_pred = self(x, y)
 
-    def validation_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> None:
+        losses = self.loss_function(y_pred, y)
+        self.log(
+            "train_loss",
+            losses["total_loss"],
+            prog_bar=True,
+            on_epoch=True,
+            on_step=True,
+        )
+        self.log_dict(
+            {f"train/loss/{k}": v for k, v in losses.items() if k != "total_loss"},
+            on_epoch=True,
+            on_step=True,
+        )
+
+        accuracies = self.compute_accuracy(y_pred[0], y)
+        self.log(
+            "tain_accuracy",
+            accuracies["total_accuracy"],
+            prog_bar=True,
+            on_epoch=True,
+            on_step=True,
+        )
+        self.log_dict(
+            {
+                f"train/accuracy/{k}": v
+                for k, v in accuracies.items()
+                if k != "total_accuracy"
+            },
+            on_epoch=True,
+            on_step=True,
+        )
+
+        return losses["total_loss"]
+
+    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         x, y = batch
-        loss = self.loss_function(self(x, None), y)
-        self.log("val_loss", loss)
+        y_pred = self(x, None)
+        y = y
+        losses = self.loss_function(y_pred, y)
+        self.log("val_loss", losses["total_loss"], prog_bar=True, on_epoch=True)
+        self.log_dict(
+            {f"val/loss/{k}": v for k, v in losses.items() if k != "total_loss"},
+            on_epoch=True,
+            on_step=False,
+        )
+
+        if (
+            self.cached_sample is None
+        ):  # and torch.rand(1) < 0.05:  # ~5% chance to cache
+            sample_idx = np.random.randint(0, x.size(0))
+            self.cached_sample = (
+                x[sample_idx, ...].detach().cpu(),
+                y_pred[0][sample_idx, ...].detach().cpu(),
+            )
+
+        accuracies = self.compute_accuracy(y_pred[0], y)
+        self.log(
+            "val_accuracy",
+            accuracies["total_accuracy"],
+            prog_bar=True,
+            on_epoch=True,
+            on_step=False,
+        )
+        self.log_dict(
+            {
+                f"val/accuracy/{k}": v
+                for k, v in accuracies.items()
+                if k != "total_accuracy"
+            },
+            on_step=False,
+            on_epoch=True,
+        )
+
+    def on_validation_epoch_end(self):
+        if self.cached_sample is not None:
+            tb_logger = self.logger.experiment
+            if isinstance(tb_logger, TensorBoardLogger):
+                fig = self.trainer.datamodule.jigsaw_val.plot_sample(
+                    pieces_and_labels=(self.cached_sample), is_plot=False
+                )
+                tb_logger.experiment.add_figure("val_sample", fig, self.current_epoch)
+                fig.savefig(
+                    self.config.paths.tb_logs
+                    / self.config.mlflow_config.run_name
+                    / f"val_sample{self.current_epoch}.png"
+                )
+                plt.close(fig)
+            self.cached_sample = None
+        return super().on_validation_epoch_end()
 
     def configure_optimizers(self) -> Dict[str, Any]:
         optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
@@ -69,7 +157,7 @@ class LitJigsawModule(pl.LightningModule):
             torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
         ],
         y: torch.Tensor,
-    ) -> torch.Tensor:
+    ) -> Dict[str, torch.Tensor]:
         """
         Compute the combined loss of MSE for positions and CrossEntropy for classifications.
 
@@ -119,7 +207,42 @@ class LitJigsawModule(pl.LightningModule):
             ce_loss_rows + ce_loss_cols + ce_loss_rot + mse_loss_position + unique_loss
         )
 
-        return total_loss
+        return {
+            "total_loss": total_loss,
+            "ce_loss_rows": ce_loss_rows,
+            "ce_loss_cols": ce_loss_cols,
+            "ce_loss_rot": ce_loss_rot,
+            "mse_loss_position": mse_loss_position,
+            "unique_loss": unique_loss,
+        }
+
+    def compute_accuracy(
+        self, y_pred: torch.Tensor, y: torch.Tensor
+    ) -> Dict[str, float]:
+        row_preds, col_preds, rot_preds = (
+            y_pred[:, :, 0],
+            y_pred[:, :, 1],
+            y_pred[:, :, 2],
+        )
+        correct_rows = row_preds == y[:, :, 0]
+        correct_cols = col_preds == y[:, :, 1]
+        correct_rots = rot_preds == y[:, :, 2]
+
+        # Position accuracy: both row and column are correct
+        correct_positions = correct_rows & correct_cols
+        pos_acc = correct_positions.float().mean()
+
+        # Total accuracy: row, column, and rotation all are correct
+        correct_total = correct_positions & correct_rots
+        total_acc = correct_total.float().mean()
+
+        return {
+            "row_accuracy": correct_rows.float().mean(),
+            "col_accuracy": correct_cols.float().mean(),
+            "rot_accuracy": correct_rots.float().mean(),
+            "pos_accuracy": pos_acc,
+            "total_accuracy": total_acc,
+        }
 
     def make_graph(self, xy: Tuple[torch.Tensor, torch.Tensor]) -> None:
         from torch.utils.tensorboard import SummaryWriter

@@ -46,6 +46,8 @@ class JigsawDataset(Dataset):
         self.puzzle_shape = puzzle_shape
         self.transforms = transforms
 
+        self.not_found = []
+
         self.__df: Optional[pd.DataFrame] = None
         self.__filtered_df: Optional[pd.DataFrame] = None
 
@@ -104,14 +106,18 @@ class JigsawDataset(Dataset):
             sample_dir = class_dir / str(row["num_sample"]).zfill(8)
 
         # Load labels
-        labels = np.load(sample_dir / "labels.npy")
+        try:
+            labels = np.load(sample_dir / "labels.npy")
 
-        # TODO: load the puzzle pieces according to the id in labels!!
-        # Load puzzle pieces
-        puzzle_pieces = {
-            f"piece_{i}": np.array(Image.open(sample_dir / f"piece_{i}.png"))
-            for i in range(len(labels))
-        }
+            # TODO: load the puzzle pieces according to the id in labels!!
+            # Load puzzle pieces
+            puzzle_pieces = {
+                f"piece_{i}": np.array(Image.open(sample_dir / f"piece_{i}.png"))
+                for i in range(len(labels))
+            }
+        except Exception as e:
+            self.not_found.append((idx, sample_dir))
+            return self.__getitem__(np.random.randint(0, len(self) - 1))
 
         return self.transforms(puzzle_pieces, labels, self.is_train)
 
@@ -119,7 +125,8 @@ class JigsawDataset(Dataset):
         self,
         idx: Optional[int] = None,
         pieces_and_labels: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
-    ) -> None:
+        is_plot: bool = False,
+    ) -> Optional[plt.Figure]:
 
         if pieces_and_labels is not None:
             puzzle_pieces, labels = pieces_and_labels
@@ -137,7 +144,7 @@ class JigsawDataset(Dataset):
 
         # Plot each piece
         for label, puzzle_piece in zip(labels, puzzle_pieces):
-            row, col, rotation = label
+            row, col, rotation = label.to(torch.int).tolist()
             img = puzzle_piece.numpy().transpose((1, 2, 0))
 
             # Undo normalization
@@ -151,7 +158,11 @@ class JigsawDataset(Dataset):
             axs[row, col].axis("off")
 
         plt.subplots_adjust(wspace=0.0005, hspace=0.0005)
-        plt.show()
+
+        if is_plot:
+            plt.show()
+        else:
+            return plt.gcf()
 
     def _update_min_dimensions(self) -> None:
         import pandarallel

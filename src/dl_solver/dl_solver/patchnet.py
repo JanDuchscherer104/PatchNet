@@ -60,8 +60,8 @@ class Transformer(nn.Module):
         self,
         d_model=256,
         nhead=8,
-        num_encoder_layers=3,
-        num_decoder_layers=3,
+        num_encoder_layers=6,
+        num_decoder_layers=6,
         decoder_dim_feedforward=512,
     ):
         super().__init__()
@@ -106,6 +106,16 @@ class Transformer(nn.Module):
             norm=None,  # TODO: Use GroupNorm instead of LayerNorm
         )
 
+    def generate_square_subsequent_mask(
+        self, size: int, device: torch.device
+    ) -> torch.Tensor:
+        mask = torch.triu(
+            torch.ones(size, size, device=device),
+            diagonal=1,
+        )
+        mask[mask == 1] = float("-inf")
+        return mask
+
     def forward(
         self,
         src: torch.Tensor,
@@ -130,7 +140,18 @@ class Transformer(nn.Module):
         encoder_memory = self.encoder(src) if memory is None else memory
 
         pos_encoding = spatial_encoding + rotation_encoding
-        decoder_output = self.decoder(pos_encoding, encoder_memory)
+
+        if self.training:
+            tgt_mask = self.generate_square_subsequent_mask(
+                pos_encoding.size(1), pos.device
+            )
+
+        decoder_output = self.decoder(
+            pos_encoding,
+            encoder_memory,
+            tgt_is_causal=self.training,
+            tgt_mask=tgt_mask if self.training else None,
+        )
 
         return decoder_output, encoder_memory
 
@@ -162,8 +183,8 @@ class DynamicPuzzleClassifier(nn.Module):
         col_logits = self.fc_cols(x)
         rotation_logits = self.fc_rotation(x)
 
-        row_logits[:, actual_rows:].fill_(float("-inf"))
-        col_logits[:, actual_cols:].fill_(float("-inf"))
+        row_logits[..., actual_rows:].fill_(float("-inf"))
+        col_logits[..., actual_cols:].fill_(float("-inf"))
 
         # Concatenate the tensors along a new dimension
         return row_logits, col_logits, rotation_logits
@@ -186,9 +207,9 @@ class PatchNet(nn.Module):
 
         self.transformer = Transformer(
             d_model=hparams.num_features_out,
-            nhead=4,
-            num_encoder_layers=3,
-            num_decoder_layers=3,
+            nhead=8,
+            num_encoder_layers=6,
+            num_decoder_layers=6,
         )
 
         self.classifier = DynamicPuzzleClassifier(
