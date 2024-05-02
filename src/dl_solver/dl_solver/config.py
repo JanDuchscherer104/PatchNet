@@ -53,6 +53,7 @@ class Paths(YamlBaseModel):
     def __convert_to_path(cls, v: str, info: ValidationInfo) -> Path:
         root = info.data.get("root")
         v = root / v if not Path(v).is_absolute() else Path(v)
+        assert isinstance(v, Path)
         if v == "data":
             assert v.exists(), f"Data directory {v} does not exist."
         else:
@@ -65,7 +66,8 @@ class Paths(YamlBaseModel):
         if v.startswith("file://"):
             return v
         root = info.data.get("root")
-        v: Path = root / v if not Path(v).is_absolute() else Path(v)
+        v = root / v if not Path(v).is_absolute() else Path(v)
+        assert isinstance(v, Path)
         v.parent.mkdir(parents=True, exist_ok=True)
         if not v.exists():
             v.mkdir(parents=True, exist_ok=True)
@@ -76,7 +78,7 @@ class Paths(YamlBaseModel):
 
 class MLflowConfig(YamlBaseModel):
     experiment_name: str = "DL-EXP"
-    run_name: str = Annotated[str, Field(default=None)]
+    run_name: Annotated[str, Field(default=None)]
     experiment_id: Annotated[str, Field(default=None)]
 
 
@@ -133,7 +135,6 @@ class Config(YamlBaseModel):
     is_multiproc: bool = True
     num_workers: Optional[int] = None
     is_optuna: bool = False
-    is_lr_scheduler: bool = False
     pin_memory: bool = True
     max_epochs: int = 50
     early_stopping_patience: int = 2
@@ -155,7 +156,7 @@ class Config(YamlBaseModel):
         "TQDMProgressBar": True,
         "EarlyStopping": True,
         "BatchSizeFinder": False,
-        "LearningRateMonitor": False,
+        "LearningRateMonitor": True,
         "ModelSummary": True,
     }
     matmul_precision: Literal["medium", "high"] = "medium"
@@ -184,7 +185,7 @@ class Config(YamlBaseModel):
             last_run_num = int(last_run_label.split("-")[0][1:])
             next_run_num = last_run_num + 1
 
-        if self.mlflow_config.run_name is None:
+        if not isinstance(self.mlflow_config.run_name, str):
             self.mlflow_config.run_name = (
                 f"R{next_run_num:03d}-{datetime.now().strftime('%b%d-%H:%M')}"
             )
@@ -204,15 +205,25 @@ class Config(YamlBaseModel):
 
 class HyperParameters(YamlBaseModel):
     batch_size: int = 512
-    learning_rate: float = 1e-3
+
+    # Learning Rates
+    lr_backbone: float = 5e-5
+    lr_transformer: float = 1e-3
+    lr_classifier: float = 2e-3
+
     weight_decay: float = 1e-4
     num_epochs: int = 50
 
     puzzle_shape: Tuple[int, int] = (3, 4)
-    segment_shape: Tuple[int, int] = (32, 32)
-    rotation_loss_weight: float = 0.1
+    segment_shape: Tuple[int, int] = (48, 48)
 
     # PATCH-NET
     num_features_out: int = 512
     backbone_is_trainable: bool = False
     num_decoder_iters: int = 12
+
+    # Loss Weights
+    w_mse_loss: float = 1
+    w_ce_rot_loss: float = 0.5
+    w_ce_pos_loss: float = 0.25
+    w_unique_loss: float = 0.4

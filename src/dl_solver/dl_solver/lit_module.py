@@ -1,4 +1,4 @@
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import pytorch_lightning as pl
@@ -6,6 +6,7 @@ import torch
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
 from torch import nn
+from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from .config import Config, HyperParameters
 from .patchnet import PatchNet
@@ -26,6 +27,7 @@ class LitJigsawModule(pl.LightningModule):
         self.save_hyperparameters(hparams.model_dump())
 
         self.model = PatchNet(hparams).to(self.device)
+        print(f"Moved {self.model.__class__.__name__} to {self.device}.")
 
         self.mse_loss = nn.MSELoss(reduction="mean")
         self.ce_loss = nn.CrossEntropyLoss()
@@ -54,7 +56,7 @@ class LitJigsawModule(pl.LightningModule):
             on_step=True,
         )
         self.log_dict(
-            {f"train/loss/{k}": v for k, v in losses.items() if k != "total_loss"},
+            {f"train-loss/{k}": v for k, v in losses.items() if k != "total_loss"},
             on_epoch=True,
             on_step=True,
         )
@@ -69,7 +71,7 @@ class LitJigsawModule(pl.LightningModule):
         )
         self.log_dict(
             {
-                f"train/accuracy/{k}": v
+                f"train-accuracy/{k}": v
                 for k, v in accuracies.items()
                 if k != "total_accuracy"
             },
@@ -82,11 +84,10 @@ class LitJigsawModule(pl.LightningModule):
     def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
         x, y = batch
         y_pred = self(x, None)
-        y = y
         losses = self.loss_function(y_pred, y)
         self.log("val_loss", losses["total_loss"], prog_bar=True, on_epoch=True)
         self.log_dict(
-            {f"val/loss/{k}": v for k, v in losses.items() if k != "total_loss"},
+            {f"val-loss/{k}": v for k, v in losses.items() if k != "total_loss"},
             on_epoch=True,
             on_step=False,
         )
@@ -110,7 +111,7 @@ class LitJigsawModule(pl.LightningModule):
         )
         self.log_dict(
             {
-                f"val/accuracy/{k}": v
+                f"val-accuracy/{k}": v
                 for k, v in accuracies.items()
                 if k != "total_accuracy"
             },
@@ -118,38 +119,87 @@ class LitJigsawModule(pl.LightningModule):
             on_epoch=True,
         )
 
+        # Log position and rotation predictions as histograms
+        num_rows, num_cols = self.hparams.puzzle_shape
+        self.logger.experiment.add_histogram(
+            "pos-hist/row", y_pred[0][:, 0], self.current_epoch, bins=num_rows
+        )
+        self.logger.experiment.add_histogram(
+            "pos-hist/col", y_pred[0][:, 1], self.current_epoch, bins=num_cols
+        )
+        self.logger.experiment.add_histogram(
+            "pos-hist/rot", y_pred[0][:, 2], self.current_epoch, bins=4
+        )
+
     def on_validation_epoch_end(self):
         if self.cached_sample is not None:
-            tb_logger = self.logger.experiment
-            if isinstance(tb_logger, TensorBoardLogger):
-                fig = self.trainer.datamodule.jigsaw_val.plot_sample(
-                    pieces_and_labels=(self.cached_sample), is_plot=False
-                )
-                tb_logger.experiment.add_figure("val_sample", fig, self.current_epoch)
-                fig.savefig(
-                    self.config.paths.tb_logs
-                    / self.config.mlflow_config.run_name
-                    / f"val_sample{self.current_epoch}.png"
-                )
-                plt.close(fig)
+            fig = self.trainer.datamodule.jigsaw_val.plot_sample(
+                pieces_and_labels=(self.cached_sample), is_plot=False
+            )
+            self.logger.experiment.add_figure("val_sample", fig, self.current_epoch)
+            fig.savefig(
+                self.config.paths.tb_logs
+                / self.config.mlflow_config.run_name
+                / f"val_sample{self.current_epoch}.png"
+            )
+            plt.show()
+            plt.close(fig)
             self.cached_sample = None
         return super().on_validation_epoch_end()
 
-    def configure_optimizers(self) -> Dict[str, Any]:
-        optimizer = torch.optim.AdamW(self.parameters(), lr=self.hparams.learning_rate)
-        optimizers = {
-            "optimizer": optimizer,
+    def configure_optimizers(
+        self,
+    ) -> Dict[str, Union[torch.optim.Optimizer, Dict[str, Any]]]:
+        # Sets up an optimizer and learning rate scheduler for the model.
+        # This allows finer control over how each part of the model is updated during training. Specifically:
+        # - Uses a lower learning rate for the pre-trained backbone CNN.
+        # - Uses a standard learning rate for the transformer and newly added classifier layers on the CNN.
+        # - Employs the ReduceLROnPlateau scheduler, adjusting the learning rate based on the validation loss.
+
+        # Returns:
+        #     A tuple containing the optimizer and a lr_scheduler config.
+
+        # Optimizer setup with different learning rates for different model components
+        classifier_params = set(self.model.backbone.backbone.classifier.parameters())
+        backbone_params = [
+            param
+            for param in self.model.backbone.backbone.parameters()
+            if param not in classifier_params
+        ]
+
+        optimizer = torch.optim.AdamW(
+            [
+                {"params": backbone_params, "lr": self.hparams.lr_backbone},
+                {
+                    "params": self.model.backbone.backbone.classifier.parameters(),
+                    "lr": self.hparams.lr_classifier,
+                },
+                {
+                    "params": self.model.transformer.parameters(),
+                    "lr": self.hparams.lr_transformer,
+                },
+                {
+                    "params": self.model.classifier.parameters(),
+                    "lr": self.hparams.lr_classifier,
+                },
+            ],
+            weight_decay=self.hparams.weight_decay,
+        )
+
+        # Scheduler setup
+        lr_scheduler_config = {
+            "scheduler": ReduceLROnPlateau(
+                optimizer, mode="min", factor=0.1, patience=3, verbose=True
+            ),
+            "interval": "epoch",
+            "monitor": "val_loss",
+            "frequency": 1,
         }
-        if self.config.is_lr_scheduler:
-            optimizers["lr_scheduler"] = {
-                "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, mode="min", factor=0.1, patience=3
-                ),
-                "interval": "epoch",
-                "monitor": "val_loss",
-                "frequency": 1,
-            }
-        return optimizers
+
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": lr_scheduler_config,
+        }
 
     def loss_function(
         self,
@@ -196,7 +246,7 @@ class LitJigsawModule(pl.LightningModule):
         )
 
         # Uniqeness Loss
-        unique_loss = 2 * torch.mean(unique_indices.logical_not().float())
+        unique_loss = torch.mean(unique_indices.logical_not().float())
 
         # nn.CrossEntropyLoss expects y_pred.shape = (B, C, D) and y.shape = (B, D)
         ce_loss_rows = self.ce_loss(row_logits.permute(0, 2, 1), y_rows)
@@ -204,7 +254,10 @@ class LitJigsawModule(pl.LightningModule):
         ce_loss_rot = self.ce_loss(rot_logits.permute(0, 2, 1), y_rot)
 
         total_loss = (
-            ce_loss_rows + ce_loss_cols + ce_loss_rot + mse_loss_position + unique_loss
+            (ce_loss_rows + ce_loss_cols) * self.hparams.w_ce_pos_loss
+            + ce_loss_rot * self.hparams.w_ce_rot_loss
+            + mse_loss_position * self.hparams.w_mse_loss
+            + unique_loss * self.hparams.w_unique_loss
         )
 
         return {

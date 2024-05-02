@@ -31,6 +31,10 @@ class EfficientNetV2(nn.Module):
         )
 
         # Replace the classification head
+        # self.classifier = nn.Sequential(
+        #     nn.Dropout(p=dropout, inplace=True),
+        #     nn.Linear(lastconv_output_channels, num_classes),
+        # )
         self.backbone.classifier[1] = nn.Linear(
             self.backbone.classifier[1].in_features, num_features_out
         )
@@ -83,6 +87,7 @@ class Transformer(nn.Module):
                 activation=F.silu,
             ),
             num_layers=num_encoder_layers,
+            norm=nn.LayerNorm(d_model),
         )
 
         # TODO: try using a single positional embedding, but with different groups: extend rotational embedding to two dimensions!
@@ -103,7 +108,7 @@ class Transformer(nn.Module):
                 activation=F.silu,
             ),
             num_layers=num_decoder_layers,
-            norm=None,  # TODO: Use GroupNorm instead of LayerNorm
+            norm=nn.LayerNorm(d_model),  # TODO: Use GroupNorm instead of LayerNorm
         )
 
     def generate_square_subsequent_mask(
@@ -208,8 +213,8 @@ class PatchNet(nn.Module):
         self.transformer = Transformer(
             d_model=hparams.num_features_out,
             nhead=8,
-            num_encoder_layers=6,
-            num_decoder_layers=6,
+            num_encoder_layers=3,
+            num_decoder_layers=3,
         )
 
         self.classifier = DynamicPuzzleClassifier(
@@ -239,9 +244,9 @@ class PatchNet(nn.Module):
         x.requires_grad = True
         # TODO: create initial positional embedding of shape (num_pieces, 3) [row_idx, col_idx, rotation]
         pos_seq = (
-            true_pos_seq.to(torch.float32).to(x.device)
+            true_pos_seq.to(torch.float32).to(x.device)  # type: ignore
             if self.training
-            else torch.rand(
+            else torch.zeros(
                 (*x.shape[:-1], 3),
                 device=x.device,
                 dtype=x.dtype,
@@ -307,13 +312,5 @@ class PatchNet(nn.Module):
                 spatial_indices[i], dim=0, return_inverse=True, return_counts=True
             )
             unique_mask[i] = counts[inverse_indices] == 1
-
-        # batch_size, num_pieces = spatial_indices.size(0), spatial_indices.size(1)
-        # spatial_indices_flat = spatial_indices.reshape(batch_size, -1)
-        # _, inverse_indices, counts = torch.unique(
-        #     spatial_indices_flat, dim=1, return_inverse=True, return_counts=True
-        # )
-        # unique_mask = counts[inverse_indices] == 1
-        # unique_mask = unique_mask.clone().view(batch_size, num_pieces)
 
         return unique_mask
