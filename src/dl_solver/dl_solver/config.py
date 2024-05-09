@@ -1,6 +1,6 @@
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Literal, Optional, Tuple, Type, TypeVar
+from typing import Dict, List, Literal, Optional, Tuple, Type, TypedDict, TypeVar
 
 import mlflow
 import psutil
@@ -14,7 +14,7 @@ T = TypeVar("T", bound="YamlBaseModel")
 class YamlBaseModel(BaseModel):
     @classmethod
     def from_yaml(cls: Type[T], file: Path | str) -> T:
-        return cls.model_validate(parse_yaml_file_as(cls, file))
+        return cls.model_validate(parse_yaml_file_as(cls, file))  # type: ignore
 
     def to_yaml(self, file: Path | str) -> None:
         to_yaml_file(file, self, indent=4)
@@ -122,15 +122,13 @@ class PiecemakerConfig(BaseModel):
         assert self.minimum_piece_size > 1 and self.number_of_pieces > 1
         assert 100 in self.scaled_sizes
 
-        # self.out_dir.mkdir(parents=True, exist_ok=True)
-        # self.mask_dir.mkdir(parents=True, exist_ok=True)
-
         return self
 
 
 class Config(YamlBaseModel):
     is_debug: bool = False
     verbose: bool = True
+    max_num_samples: Optional[int] = None
     from_ckpt: Optional[str] = None
     is_multiproc: bool = True
     num_workers: Optional[int] = None
@@ -204,7 +202,7 @@ class Config(YamlBaseModel):
 
 
 class HyperParameters(YamlBaseModel):
-    batch_size: int = 512
+    batch_size: int = 128
 
     # Learning Rates
     lr_backbone: float = 5e-5
@@ -218,12 +216,27 @@ class HyperParameters(YamlBaseModel):
     segment_shape: Tuple[int, int] = (48, 48)
 
     # PATCH-NET
-    num_features_out: int = 512
+    num_features_out: int = 768
     backbone_is_trainable: bool = False
     num_decoder_iters: int = 12
+    softmax_temperature: float = 1.0
+    gumbel_temperature: float = 6.0
+    non_unique_penalty: float = Field(default=0.8, lt=1, ge=0)
+    num_post_iters: int = 5
 
     # Loss Weights
     w_mse_loss: float = 1
     w_ce_rot_loss: float = 0.5
     w_ce_pos_loss: float = 0.25
     w_unique_loss: float = 0.4
+
+    # Optional Embeddings
+    # embeddings = Field(
+    #     default=TypedDict(
+    #         "Embeddings",
+    #         {
+    #             "use_num_row_col": bool,
+    #             "use_class": bool,
+    #         },
+    #     )
+    # )
