@@ -1,12 +1,13 @@
 import random
 import threading
-from typing import Dict, Tuple
+from typing import Dict, List, Tuple
 
 import albumentations as A
 import numpy as np
 import torch
 from albumentations.core.transforms_interface import ImageOnlyTransform
 from albumentations.pytorch import ToTensorV2
+from torch import Tensor
 
 
 class RotateAndRecord(ImageOnlyTransform):
@@ -16,7 +17,7 @@ class RotateAndRecord(ImageOnlyTransform):
 
     def apply(self, img: np.ndarray[np.uint8], **params) -> np.ndarray:
         self.local.rotation_idx = np.random.randint(0, 4)
-        return np.rot90(m=img, k=self.local.rotation_idx)
+        return np.rot90(m=img, k=self.local.rotation_idx)  # type: ignore
 
     def get_transform_init_args_names(self):
         return ()
@@ -68,9 +69,9 @@ class AlbumTransforms:
         puzzle_pieces: Dict[str, np.ndarray[np.uint8]],  # "piece_{id}"
         labels: np.ndarray[np.uint8],  # (num_pieces, 3) id, row, col
         is_train: bool = True,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        transformed_pieces = []
-        rotation_labels = []
+    ) -> Tuple[Tensor, Tensor]:
+        transformed_pieces: List[Tensor] = []
+        rotation_labels: List[Tensor] = []
 
         for label in labels:
             id, *_ = label
@@ -86,7 +87,7 @@ class AlbumTransforms:
             rotation_labels.append(rotation_label)
 
         # Convert to tensors
-        transformed_pieces = torch.stack(transformed_pieces, dim=0)
+        stacked_transformed_pieces = torch.stack(transformed_pieces, dim=0)
         labels = torch.cat(
             [
                 torch.from_numpy(labels[:, 1:]).type(torch.int64),
@@ -96,8 +97,8 @@ class AlbumTransforms:
         )
 
         # Shuffle both tensors along the pieces dimension
-        indices = torch.randperm(transformed_pieces.size(0))
-        transformed_pieces = transformed_pieces[indices]
+        indices = torch.randperm(stacked_transformed_pieces.size(0))
+        stacked_transformed_pieces = stacked_transformed_pieces[indices]
         labels = labels[indices]
 
-        return transformed_pieces, labels
+        return stacked_transformed_pieces, labels

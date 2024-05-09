@@ -33,6 +33,7 @@ class LitJigsawDatamodule(pl.LightningDataModule):
                     split="train",
                     puzzle_shape=self.hparams.puzzle_shape,
                     transforms=self.transforms,
+                    max_num_samples=self.config.max_num_samples,
                 )
             case "validate":
                 self.jigsaw_val = JigsawDataset(
@@ -40,6 +41,7 @@ class LitJigsawDatamodule(pl.LightningDataModule):
                     split="val",
                     puzzle_shape=self.hparams.puzzle_shape,
                     transforms=self.transforms,
+                    max_num_samples=self.config.max_num_samples,
                 )
             case "test":
                 self.jigsaw_test = JigsawDataset(
@@ -47,6 +49,7 @@ class LitJigsawDatamodule(pl.LightningDataModule):
                     split="test",
                     puzzle_shape=self.hparams.puzzle_shape,
                     transforms=self.transforms,
+                    max_num_samples=self.config.max_num_samples,
                 )
             case _:
                 raise ValueError(f"Unknown stage: {stage}")

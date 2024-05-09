@@ -3,6 +3,7 @@ from .jigsaw_dataset import JigsawDataset
 from .lit_datamodule import LitJigsawDatamodule
 from .lit_module import LitJigsawModule
 from .lit_trainer_factory import TrainerFactory
+from .patchnet import PatchNet
 from .positional_encoding import LearnableFourierFeatures
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "LitJigsawDatamodule",
     "TrainerFactory",
     "LearnableFourierFeatures",
+    "PatchNet",
 ]

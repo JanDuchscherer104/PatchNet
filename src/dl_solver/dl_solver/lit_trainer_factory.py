@@ -101,7 +101,7 @@ class TrainerFactory:
 
     def _create_batch_size_finder(self):
         return BatchSizeFinder(
-            mode="power",
+            mode="binsearch",
             steps_per_trial=3,
             init_val=self.hparams.batch_size,
             max_trials=25,

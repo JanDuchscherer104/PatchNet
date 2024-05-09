@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import torch
 from matplotlib import pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
-from torch import nn
+from torch import Tensor, nn
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 
 from .config import Config, HyperParameters
@@ -32,18 +32,14 @@ class LitJigsawModule(pl.LightningModule):
         self.mse_loss = nn.MSELoss(reduction="mean")
         self.ce_loss = nn.CrossEntropyLoss()
 
-        self.cached_sample: Optional[Tuple[torch.Tensor, torch.Tensor]] = None
+        self.cached_sample: Optional[Tuple[Tensor, Tensor]] = None
 
         torch.set_float32_matmul_precision(self.config.matmul_precision)
 
-    def forward(
-        self, x: torch.Tensor, y: Optional[torch.Tensor] = None, *args, **kwargs
-    ) -> torch.Tensor:
+    def forward(self, x: Tensor, y: Optional[Tensor] = None, *args, **kwargs) -> Tensor:
         return self.model(x, y if self.training else None)
 
-    def training_step(
-        self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int
-    ) -> torch.Tensor:
+    def training_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int) -> Tensor:
         x, y = batch
         y_pred = self(x, y)
 
@@ -81,7 +77,7 @@ class LitJigsawModule(pl.LightningModule):
 
         return losses["total_loss"]
 
-    def validation_step(self, batch: Tuple[torch.Tensor, torch.Tensor], batch_idx: int):
+    def validation_step(self, batch: Tuple[Tensor, Tensor], batch_idx: int):
         x, y = batch
         y_pred = self(x, None)
         losses = self.loss_function(y_pred, y)
@@ -203,22 +199,20 @@ class LitJigsawModule(pl.LightningModule):
 
     def loss_function(
         self,
-        y_pred: Tuple[
-            torch.Tensor, torch.Tensor, Tuple[torch.Tensor, torch.Tensor, torch.Tensor]
-        ],
-        y: torch.Tensor,
-    ) -> Dict[str, torch.Tensor]:
+        y_pred: Tuple[Tensor, Tensor, Tuple[Tensor, Tensor, Tensor]],
+        y: Tensor,
+    ) -> Dict[str, Tensor]:
         """
         Compute the combined loss of MSE for positions and CrossEntropy for classifications.
 
         Args:
             y_pred: a tuple containing
-                pos_seq: torch.Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
-                unique_indices: torch.Tensor[torch.bool] - (B, num_pieces)
-                logits: Tuple[torch.Tensor[torch.float32], torch.Tensor[torch.float32], torch.Tensor[torch.float32]]
-                    row_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_rows)
-                    col_logits: torch.Tensor[torch.float32] - (B, num_pieces, max_cols)
-                    rotation_logits: torch.Tensor[torch.float32] - (B, num_pieces, 3)
+                pos_seq: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+                unique_indices: Tensor[torch.bool] - (B, num_pieces)
+                logits: Tuple[Tensor[torch.float32], Tensor[torch.float32], Tensor[torch.float32]]
+                    row_logits: Tensor[torch.float32] - (B, num_pieces, max_rows)
+                    col_logits: Tensor[torch.float32] - (B, num_pieces, max_cols)
+                    rotation_logits: Tensor[torch.float32] - (B, num_pieces, 3)
             y: Tensor of true labels of shape (B, 12, 3) [row~_idx, col_idx, rotation]
 
         Returns:
@@ -269,9 +263,7 @@ class LitJigsawModule(pl.LightningModule):
             "unique_loss": unique_loss,
         }
 
-    def compute_accuracy(
-        self, y_pred: torch.Tensor, y: torch.Tensor
-    ) -> Dict[str, float]:
+    def compute_accuracy(self, y_pred: Tensor, y: Tensor) -> Dict[str, float]:
         row_preds, col_preds, rot_preds = (
             y_pred[:, :, 0],
             y_pred[:, :, 1],
@@ -297,7 +289,7 @@ class LitJigsawModule(pl.LightningModule):
             "total_accuracy": total_acc,
         }
 
-    def make_graph(self, xy: Tuple[torch.Tensor, torch.Tensor]) -> None:
+    def make_graph(self, xy: Tuple[Tensor, Tensor]) -> None:
         from torch.utils.tensorboard import SummaryWriter
 
         writer = SummaryWriter()
@@ -306,7 +298,7 @@ class LitJigsawModule(pl.LightningModule):
         )
         writer.close()
 
-    def torchviz_model(self, xy: Tuple[torch.Tensor, torch.Tensor]) -> None:
+    def torchviz_model(self, xy: Tuple[Tensor, Tensor]) -> None:
         from torchviz import make_dot
 
         make_dot(self.model(xy[0]), params=dict(self.model.named_parameters())).render(

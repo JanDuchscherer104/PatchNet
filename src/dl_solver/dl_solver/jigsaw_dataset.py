@@ -8,6 +8,7 @@ import torch
 from matplotlib import pyplot as plt
 from pandarallel import pandarallel
 from PIL import Image
+from torch import Tensor
 from torch.utils.data import Dataset
 
 from .album_transforms import AlbumTransforms
@@ -29,6 +30,7 @@ class JigsawDataset(Dataset):
     is_train: bool
     puzzle_shape: Tuple[int, int]
     transforms: AlbumTransforms
+    max_num_samples: Optional[int]
 
     df: pd.DataFrame
     filtered_df: pd.DataFrame  # filtered by shape
@@ -39,12 +41,14 @@ class JigsawDataset(Dataset):
         split: Literal["train", "val", "test"],
         puzzle_shape: Tuple[int, int],
         transforms: AlbumTransforms,
+        max_num_samples: Optional[int],
     ) -> None:
         self.dataset_dir = dataset_dir
         self.split = split
         self.is_train = split == "train"
         self.puzzle_shape = puzzle_shape
         self.transforms = transforms
+        self.max_num_samples = max_num_samples
 
         self.not_found = []
 
@@ -71,6 +75,12 @@ class JigsawDataset(Dataset):
         if self.__filtered_df is None:
             rows, cols = self.puzzle_shape
             self.__filtered_df = self.df.query("rows == @rows and cols == @cols")
+            if self.max_num_samples is not None:
+                assert self.max_num_samples <= len(self.__filtered_df)
+                print(
+                    f"Setting the maximum number of samples in the {self.split} split to {self.max_num_samples}!"
+                )
+                self.__filtered_df = self.__filtered_df.sample(self.max_num_samples)
             self.df = None
         return self.__filtered_df
 
@@ -83,12 +93,12 @@ class JigsawDataset(Dataset):
     def __len__(self) -> int:
         return len(self.filtered_df)
 
-    def __getitem__(self, idx) -> Tuple[torch.Tensor, torch.Tensor]:
+    def __getitem__(self, idx) -> Tuple[Tensor, Tensor]:
         """
         Returns
             Tuple[
-                X: torch.Tensor[torch.float32] - (num_pieces, 3, H, W)
-                y: torch.Tensor[torch.int64] - (num_pieces, 3) [row_idx, col_idx, rotation]
+                X: Tensor[torch.float32] - (num_pieces, 3, H, W)
+                y: Tensor[torch.int64] - (num_pieces, 3) [row_idx, col_idx, rotation]
                     row in {0, 1, ..., rows - 1}
                     col in {0, 1, ..., cols - 1}
                     rotation in {0, 1, 2, 3}
@@ -124,7 +134,7 @@ class JigsawDataset(Dataset):
     def plot_sample(
         self,
         idx: Optional[int] = None,
-        pieces_and_labels: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
+        pieces_and_labels: Optional[Tuple[Tensor, Tensor]] = None,
         is_plot: bool = False,
     ) -> Optional[plt.Figure]:
 
