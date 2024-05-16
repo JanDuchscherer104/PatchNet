@@ -3,6 +3,7 @@ from unittest.mock import MagicMock
 
 import numpy as np
 import torch
+from torch import Tensor
 
 from dl_solver import Config, HyperParameters, LitJigsawDatamodule
 
@@ -22,29 +23,29 @@ class TestLitJigsawDataModule(unittest.TestCase):
     def test_get_item_output_types_and_shapes(self):
         # Mock the __getitem__ method to return a sample batch
         sample_data = torch.rand(3, 64, 64)
-        sample_labels = torch.tensor([0, 0, 0])
+        sample_labels = Tensor([0, 0, 0])
         self.data_module.__getitem__ = MagicMock(
             return_value=(sample_data, sample_labels)
         )
 
         data, labels = self.data_module.__getitem__(0)
-        self.assertIsInstance(data, torch.Tensor)
-        self.assertIsInstance(labels, torch.Tensor)
+        self.assertIsInstance(data, Tensor)
+        self.assertIsInstance(labels, Tensor)
         self.assertEqual(data.shape, torch.Size([3, 64, 64]))
         self.assertEqual(labels.shape, torch.Size([4]))
 
     def test_dataloader_output_types_and_shapes(self):
         # Mock the dataloader to return a sample batch
         sample_data = torch.rand(2, 3, 64, 64)
-        sample_labels = torch.tensor([[0, 0, 0], [0, 0, 0]])
+        sample_labels = Tensor([[0, 0, 0], [0, 0, 0]])
         self.data_module.train_dataloader = MagicMock(
             return_value=iter([(sample_data, sample_labels)])
         )
 
         loader = self.data_module.train_dataloader()
         for data, labels in loader:
-            self.assertIsInstance(data, torch.Tensor)
-            self.assertIsInstance(labels, torch.Tensor)
+            self.assertIsInstance(data, Tensor)
+            self.assertIsInstance(labels, Tensor)
             self.assertEqual(data.shape, torch.Size([2, 3, 64, 64]))
             self.assertEqual(labels.shape, torch.Size([2, 2]))
 
@@ -54,8 +55,8 @@ class TestLitJigsawDataModule(unittest.TestCase):
         loader = self.data_module.train_dataloader()
 
         for i, (data, labels) in enumerate(loader):
-            self.assertIsInstance(data, torch.Tensor)
-            self.assertIsInstance(labels, torch.Tensor)
+            self.assertIsInstance(data, Tensor)
+            self.assertIsInstance(labels, Tensor)
             self.assertEqual(
                 data.shape,
                 (
