@@ -11,6 +11,8 @@ from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 from .config import HyperParameters
 from .positional_encoding import LearnableFourierFeatures
 
+# from .hungarian_net import HungarianNet
+
 
 class EfficientNetV2(nn.Module):
     def __init__(self, num_features_out: int, is_trainable: bool = False, **kwargs):
@@ -234,17 +236,17 @@ class PatchNet(nn.Module):
             max_cols=hparams.puzzle_shape[1],
         )
 
+        # self.hungarian = HungarianNet(max_len=np.prod(hparams.puzzle_shape))
         # self.temperatures = LearnableTemperatures(hparams)
 
     def forward(
         self, x: Tensor, true_pos_seq: Optional[Tensor] = None
-    ) -> Tuple[Tensor, Tensor, Tuple[Tensor, Tensor, Tensor]]:
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
         """
         Args:
             x: Tensor[torch.float32] - (B, num_pieces, 3, H, W)
         Returns:
             pos_seq: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
-            unique_indices: Tensor[torch.bool] - (B, num_pieces)
             logits: Tuple[Tensor[torch.float32], Tensor[torch.float32], Tensor[torch.float32]]
                 row_logits: Tensor[torch.float32] - (B, num_pieces, max_rows)
                 col_logits: Tensor[torch.float32] - (B, num_pieces, max_cols)
@@ -254,7 +256,7 @@ class PatchNet(nn.Module):
         # TODO: Potential Feature Reduction
         # TODO: create initial positional embedding of shape (num_pieces, 3) [row_idx, col_idx, rotation]
         pos_seq = (
-            true_pos_seq.to(torch.float32).to(x.device)  # type: ignore
+            true_pos_seq.clone().to(x)  # type: ignore
             if self.training
             else torch.rand(
                 (*x.shape[:-1], 3),
@@ -272,12 +274,10 @@ class PatchNet(nn.Module):
                 pos_seq, logits, encoder_memory = self._soft_forward_step(
                     x, pos_seq.to(torch.float32), encoder_memory
                 )
-        unique_indices = self._check_unique_indices(pos_seq[:, :, :2])
 
         # potentially embed unique_indices into x and pass it through the decoder again!
-        # TODO: How to embed unique_indices into x?
 
-        return pos_seq, unique_indices, logits
+        return pos_seq, logits
 
     def _forward_step(
         self,
@@ -304,46 +304,67 @@ class PatchNet(nn.Module):
         return pos_seq, logits, encoder_memory
 
     def _soft_forward_step(
-        self,
-        x: Tensor,
-        pos_seq: Tensor,
-        encoder_memory: Optional[Tensor] = None,
+        self, x: Tensor, pos_seq: Tensor, encoder_memory: Optional[Tensor] = None
     ) -> Tuple[Tensor, Tensor, Tensor]:
-        """
-
-        Args:
-            x: Tensor[B, num_pieces, num_features]
-            pos_seq: Tensor[B, num_pieces, 3]
-            encoder_memory: Optional[Tensor[B, num_pieces, num_features]]
-
-        Returns:
-            Tuple[Tensor, Tuple[Tensor, Tensor, Tensor], Tensor]: (pos_seq, (row, col, rot)_logits, encoder_memory)
-        """
         x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
         logits = self.classifier(x, *self.hparams.puzzle_shape)
 
-        num_rows, num_cols = self.hparams.puzzle_shape
+        joint_probs = self._compute_joint_probabilities(*logits[:2])
+        joint_logits = self.apply_penalties(joint_probs)
 
-        joint_probs = self._compute_joint_probabilities(logits[0], logits[1])
-        enhanced_probs = self.apply_penalties(joint_probs)
-
-        # Get indices from the probabilities
-        indices = enhanced_probs.argmax(dim=-1)
-        row_indices = indices // num_cols  # Integer division to find row index
-        col_indices = indices % num_cols  # Modulo to find column index
-
-        # Rotation logits processed separately
-        rotation_indices = torch.argmax(logits[2], dim=-1)
+        # Differentiable Hungarian or similar algorithm to get unique assignments  # Make sure to initialize this correctly
+        # assignments, _, _ = self.hungarian(
+        #     flat_joint_probs
+        # )  # Expected shape: [B, num_pieces]
 
         # Stack the indices to form the final position sequence tensor
-        pos_seq = torch.stack([row_indices, col_indices, rotation_indices], dim=-1).to(
-            torch.float32
+        pos_seq = torch.cat(
+            [
+                self.softargmax2d(joint_logits),
+                self.softargmax1d(logits[2]).unsqueeze(-1),
+            ],
+            dim=-1,
         )
 
         return pos_seq, logits, encoder_memory
 
+    @staticmethod
+    def softargmax1d(input: Tensor, beta=100) -> Tensor:
+        *_, n = input.shape
+        input = F.softmax(beta * input, dim=-1)
+        indices = torch.linspace(0, 1, n, device=input.device)
+        result = torch.sum((n - 1) * input * indices, dim=-1)
+        return result
+
+    @staticmethod
+    def softargmax2d(input: Tensor, beta=100) -> Tensor:
+        *_, h, w = input.shape
+
+        input = input.reshape(*_, h * w)
+        input = nn.functional.softmax(beta * input, dim=-1)
+
+        indices_c, indices_r = torch.meshgrid(
+            torch.linspace(0, 1, w, device=input.device),
+            torch.linspace(0, 1, h, device=input.device),
+        )
+
+        indices_r = indices_r.reshape(-1, h * w)
+        indices_c = indices_c.reshape(-1, h * w)
+
+        result_r = torch.sum((h - 1) * input * indices_r, dim=-1)
+        result_c = torch.sum((w - 1) * input * indices_c, dim=-1)
+
+        result = torch.stack([result_r, result_c], dim=-1)
+
+        return result
+
     def apply_penalties(self, joint_probs: Tensor) -> Tensor:
         """
+        Aims to penalize high probabilities for the same coordinates
+        Args:
+            joint_probs: Tensor [B, L, num_rows, num_cols] of Joint Probabilities.
+
+
         Case distinctions:
             - max_per_class & max_per_token -> assign
             - ~max_per_class & max_per_token -> penalize, subsidize others
@@ -356,45 +377,33 @@ class PatchNet(nn.Module):
         max_per_token = (flat_probs == max_probs_per_token).float()
         max_per_class = (flat_probs == max_probs_per_class).float()
 
-        # Dynamic penalty based on the relative probability difference
-        penalty_scale = (
-            flat_probs
-            - max_probs_per_class / max_probs_per_class
-            + flat_probs
-            - max_probs_per_token / max_probs_per_token
-        ) / 2
-        soft_penalty_factor = 0.1  # Smaller penalty factor for non-max probabilities
-
-        # Identify conflicts: max_per_class is high where multiple tokens select the same class
-        conflict_mask = max_per_class.sum(dim=1) > 1
-
-        # Apply penalties: reduce probabilities where there is a conflict and it is not the maximum for the token
-        penalties = 1 - (
-            +(
-                max_per_token
-                + max_per_class
-                - max_per_token * max_per_class
-                + conflict_mask.float()
-            )
-            * (penalty_scale * soft_penalty_factor)
+        # Apply a dynamic penalty for non-max elements and a boost for max elements where they aren't the max token-wise
+        # Penalizes non-max tokens
+        penalties = (
+            (1 - max_per_class)
+            * max_per_token
+            * ((max_probs_per_class - flat_probs) / max_probs_per_class)
+        )
+        # Boost max-class elements that are not max-token
+        incentives = (
+            (1 - max_per_token)
+            * max_per_class
+            * ((max_probs_per_token - flat_probs) / max_probs_per_token)
         )
 
-        # Ensure that we do not decrease probabilities below a certain threshold to maintain stability
-        penalized_probs = flat_probs * penalties.clamp(min=0.1)
+        adjusted_probs = flat_probs * (1 + incentives - penalties)
 
         return (
-            (penalized_probs + torch.finfo(torch.float32).eps).log().softmax(-1)
+            (adjusted_probs + torch.finfo(torch.float32).eps).log().softmax(-1)
         ).view_as(joint_probs)
 
     def _compute_joint_probabilities(
         self, row_logits: Tensor, col_logits: Tensor
     ) -> Tensor:
-        """_summary_
-
+        """
         Args:
             row_logits (Tensor[B, num_pieces, num_rows])
             col_logits (Tensor[B, num_pieces, num_cols])
-            temperature (float, optional): Defaults to 1.0.
 
         Returns:
             Tensor[B, num_pieces, num_rows, num_cols]: Joint probabilities
@@ -406,79 +415,3 @@ class PatchNet(nn.Module):
         joint_probs = row_probs[:, :, :, None] * col_probs[:, :, None, :]
 
         return joint_probs
-
-    def differentiable_prediction(
-        self, enhanced_probs: Tensor, rot_logits: Tensor
-    ) -> Tensor:
-        """
-        Generate a soft differentiable prediction from the enhanced joint probabilities of rows and columns
-        and rotation logits.
-
-        Args:
-            enhanced_probs (Tensor[B, num_pieces, num_rows * num_cols]): Enhanced probabilities after penalties.
-            rot_logits (Tensor[B, num_pieces, num_rotations]): Logits for rotation predictions.
-
-        Returns:
-            Tensor[B, num_pieces, 3]: Differentiable predictions for rows, columns, and rotations.
-        """
-        num_rows, num_cols = self.hparams.puzzle_shape
-
-        # Convert the joint probabilities back to rows and columns
-        row_indices = (
-            torch.arange(num_rows, device=enhanced_probs.device)
-            .repeat(num_cols, 1)
-            .T.flatten()
-        )
-        col_indices = (
-            torch.arange(num_cols, device=enhanced_probs.device)
-            .repeat(num_rows, 1)
-            .flatten()
-        )
-
-        # Expand indices to match the batch and piece dimensions
-        row_indices = row_indices.expand(
-            enhanced_probs.shape[0], enhanced_probs.shape[1], -1
-        )
-        col_indices = col_indices.expand(
-            enhanced_probs.shape[0], enhanced_probs.shape[1], -1
-        )
-
-        # Weighted sum of indices based on softmax probabilities to ensure differentiability
-        softmax_probs = F.softmax(enhanced_probs, dim=-1)
-        soft_row_positions = torch.sum(softmax_probs * row_indices.float(), dim=-1)
-        soft_col_positions = torch.sum(softmax_probs * col_indices.float(), dim=-1)
-
-        # Apply softmax to rotation logits to get differentiable rotation indices
-        softmax_rot_probs = F.softmax(rot_logits, dim=-1)
-        rot_indices = torch.arange(rot_logits.shape[-1], device=rot_logits.device)
-        soft_rot_positions = torch.sum(softmax_rot_probs * rot_indices.float(), dim=-1)
-
-        # Stack the soft positions to form the final position sequence tensor
-        pos_seq = torch.stack(
-            [soft_row_positions, soft_col_positions, soft_rot_positions], dim=-1
-        )
-
-        return pos_seq
-
-    @staticmethod
-    def _check_unique_indices(spatial_indices: Tensor) -> Tensor:
-        """
-        Check uniqueness of spatial indices within each batch.
-        Args:
-            spatial_indices: Tensor[torch.int64] - (B, num_pieces, 2) [row_idx, col_idx]
-        Returns:
-            is_unique: Tensor[torch.bool] - (B, num_pieces)
-        """
-        batch_size, num_pieces = spatial_indices.size(0), spatial_indices.size(1)
-        unique_mask = torch.ones(
-            (batch_size, num_pieces), dtype=torch.bool, device=spatial_indices.device
-        )
-
-        # Check each batch independently
-        for i in range(batch_size):
-            _, inverse_indices, counts = torch.unique(
-                spatial_indices[i], dim=0, return_inverse=True, return_counts=True
-            )
-            unique_mask[i] = counts[inverse_indices] == 1
-
-        return unique_mask
