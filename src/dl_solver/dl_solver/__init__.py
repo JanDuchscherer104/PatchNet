@@ -1,4 +1,5 @@
 from .config import Config, HyperParameters, PiecemakerConfig
+from .jigsaw_criteria import JigsawCriteria
 from .jigsaw_dataset import JigsawDataset
 from .lit_datamodule import LitJigsawDatamodule
 from .lit_module import LitJigsawModule
@@ -16,4 +17,5 @@ __all__ = [
     "TrainerFactory",
     "LearnableFourierFeatures",
     "PatchNet",
+    "JigsawCriteria",
 ]

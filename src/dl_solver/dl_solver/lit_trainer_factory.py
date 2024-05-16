@@ -1,8 +1,8 @@
-from typing import Any, Callable, Dict, List
+from pathlib import Path
+from typing import Any, Callable, Dict, List, Literal, Tuple
 from warnings import warn
 
 import mlflow
-import numpy as np
 from pytorch_lightning import Callback, LightningModule, Trainer
 from pytorch_lightning.callbacks import (
     BatchSizeFinder,
@@ -17,6 +17,8 @@ from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 
 from .config import Config, HyperParameters
+from .lit_datamodule import LitJigsawDatamodule
+from .lit_module import LitJigsawModule
 
 
 class TrainerFactory:
@@ -39,8 +41,28 @@ class TrainerFactory:
             config.num_workers = 0
             config.is_multiproc = False
             config.verbose = True
+            config.is_mlflow = False
 
             config.active_callbacks["ModelCheckpoint"] = False
+        elif config.is_mlflow:
+            mlflow.pytorch.autolog(
+                log_every_n_epoch=1,
+                log_every_n_step=None,
+                log_models=True,
+                log_datasets=False,
+                disable=False,
+                exclusive=False,
+                disable_for_unsupported_versions=False,
+                silent=False,
+                registered_model_name=None,
+                extra_tags=None,
+                checkpoint=True,
+                checkpoint_monitor="val_loss",
+                checkpoint_mode="min",
+                checkpoint_save_best_only=True,
+                checkpoint_save_weights_only=False,
+                checkpoint_save_freq="epoch",
+            )
 
         # Create Trainer
         return Trainer(
@@ -53,6 +75,34 @@ class TrainerFactory:
             log_every_n_steps=config.log_every_n_steps,
             enable_model_summary=not config.active_callbacks["ModelSummary"],
             **trainer_kwargs,
+        )
+
+    @classmethod
+    def create_all(
+        cls,
+        config: Config,
+        hparams: HyperParameters,
+        setup: List[Literal["fit", "validate", "test"]] = ["fit", "validate"],
+        **trainer_kwargs,
+    ) -> Tuple[Trainer, LitJigsawModule, LitJigsawDatamodule]:
+        """Create and initialize Callback instances."""
+        trainer = cls.create_trainer(config, hparams, **trainer_kwargs)
+        if isinstance(config.from_ckpt, Path):
+            print(f"Loading model from checkpoint: {config.from_ckpt}")
+            lit_module = LitJigsawModule.load_from_checkpoint(
+                config.from_ckpt, config=config, hparams=hparams
+            )
+        else:
+            lit_module = LitJigsawModule(config, hparams)
+        lit_datamodule = LitJigsawDatamodule(config, hparams)
+        if len(setup) > 0:
+            for stage in setup:
+                lit_datamodule.setup(stage)
+                lit_module.setup(stage)
+        return (
+            trainer,
+            lit_module,
+            lit_datamodule,
         )
 
     def _get_callback_map(self) -> Dict[str, Callable]:

@@ -41,6 +41,9 @@ class Paths(YamlBaseModel):
     semantic_label_map: Annotated[
         Path, Field(default=".data/jigsaw/imagenet_semantic_label_map.txt")
     ]
+    loss_df: Annotated[
+        Path, Field(default="src/solver/.logs/loss_df.csv", validate_default=True)
+    ]
 
     @field_validator(
         "imagenet_dir",
@@ -48,14 +51,15 @@ class Paths(YamlBaseModel):
         "tb_logs",
         "model_viz_dir",
         "jigsaw_dir",
+        "loss_df",
     )
     @classmethod
     def __convert_to_path(cls, v: str, info: ValidationInfo) -> Path:
         root = info.data.get("root")
         v = root / v if not Path(v).is_absolute() else Path(v)
         assert isinstance(v, Path)
-        if v == "data":
-            assert v.exists(), f"Data directory {v} does not exist."
+        if info.field_name in ("data", "loss_df"):
+            assert v.exists(), f"Path {v} does not exist."
         else:
             v.mkdir(parents=True, exist_ok=True)
         return v.resolve()
@@ -127,9 +131,10 @@ class PiecemakerConfig(BaseModel):
 
 class Config(YamlBaseModel):
     is_debug: bool = False
+    is_mlflow: bool = True
     verbose: bool = True
     max_num_samples: Optional[int] = None
-    from_ckpt: Optional[str] = None
+    from_ckpt: Annotated[Optional[Path], Optional[str]] = None
     is_multiproc: bool = True
     num_workers: Optional[int] = None
     is_optuna: bool = False
@@ -194,9 +199,17 @@ class Config(YamlBaseModel):
 
         self.piecemaker_config.jigsaw_dir = self.paths.jigsaw_dir
 
+        # Create tensorboard logs directory
         (self.paths.tb_logs / self.mlflow_config.run_name).mkdir(
             parents=True, exist_ok=True
         )
+
+        if self.from_ckpt is not None:
+            ckpt_path = self.paths.checkpoints / self.from_ckpt
+            assert (
+                ckpt_path.exists()
+            ), f"Checkpoint {ckpt_path} does not exist, but is specified in the config."
+            self.from_ckpt = ckpt_path
 
         return self
 
@@ -206,8 +219,8 @@ class HyperParameters(YamlBaseModel):
 
     # Learning Rates
     lr_backbone: float = 5e-5
-    lr_transformer: float = 1e-3
-    lr_classifier: float = 2e-3
+    lr_transformer: float = 1e-4
+    lr_classifier: float = 1e-4
 
     weight_decay: float = 1e-4
     num_epochs: int = 50
@@ -218,25 +231,12 @@ class HyperParameters(YamlBaseModel):
     # PATCH-NET
     num_features_out: int = 768
     backbone_is_trainable: bool = False
-    num_decoder_iters: int = 12
-    softmax_temperature: float = 1.0
-    gumbel_temperature: float = 6.0
-    non_unique_penalty: float = Field(default=0.8, lt=1, ge=0)
-    num_post_iters: int = 5
+    num_decoder_iters: int = 8
 
-    # Loss Weights
-    w_mse_loss: float = 1
+    # Loss Related
+    is_norm_costs: bool = True
+    w_mse_loss: float = 1.25
     w_ce_rot_loss: float = 0.5
-    w_ce_pos_loss: float = 0.25
-    w_unique_loss: float = 0.4
-
-    # Optional Embeddings
-    # embeddings = Field(
-    #     default=TypedDict(
-    #         "Embeddings",
-    #         {
-    #             "use_num_row_col": bool,
-    #             "use_class": bool,
-    #         },
-    #     )
-    # )
+    w_ce_pos_loss: float = 0.5
+    w_unique_loss: float = 2
+    unique_cost_sigma: float = 0.52
