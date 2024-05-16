@@ -61,6 +61,7 @@
 - Optimize the cost function heuristically using Optuna.
 - Implement a custom loss function that penalizes overlapping placements more severely.
 - Use a permutation-invariant loss function. [Hungarian loss](https://en.wikipedia.org/wiki/Hungarian_algorithm) could possibly be adapted!
+- We need to optimize for the joint probability of the entire sequence rather than optimizing all tokens individually.
 
 
 - Embedding of the original sizes of each piece, since we are cropping and resizing the pieces.
