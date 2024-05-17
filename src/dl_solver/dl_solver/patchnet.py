@@ -5,13 +5,11 @@ import torch
 import torch.nn as nn
 from torch import Tensor
 from torch.functional import F
-from torchtyping import TensorType
 from torchvision.models import EfficientNet_V2_S_Weights, efficientnet_v2_s
 
 from .config import HyperParameters
+from .nn_utils import nn_utils
 from .positional_encoding import LearnableFourierFeatures
-
-# from .hungarian_net import HungarianNet
 
 
 class EfficientNetV2(nn.Module):
@@ -47,7 +45,7 @@ class EfficientNetV2(nn.Module):
         if not is_trainable:
             for param in self.backbone.parameters():
                 param.requires_grad = False
-        self.backbone.classifier[1].requires_grad = True
+        self.backbone.classifier[1].requires_grad_(True)
 
     def forward(self, x: Tensor) -> Tensor:
         """
@@ -63,14 +61,44 @@ class EfficientNetV2(nn.Module):
         return torch.stack([self.backbone(x_i) for x_i in x.unbind(dim=1)], dim=1)
 
 
+class PuzzleTypeClassifier(nn.Module):
+    """
+    For each puzzle piece, predict the type of the piece:
+        - Corner (0) ~ (row_idx == 0 || row_idx == num_rows - 1) && (col_idx == 0 || col_idx == num_cols - 1)
+        - Edge (1) ~ (row_idx == 0 || row_idx == num_rows - 1) || (col_idx == 0 || col_idx == num_cols - 1)
+        - Center (2) ~ else
+    """
+
+    def __init__(self, input_features: int) -> None:
+        super().__init__()
+        self.fc = nn.Linear(input_features, 3)
+        self.embedding = nn.Sequential(
+            nn.Softmax(dim=-1),
+            LearnableFourierFeatures(
+                pos_dim=3, d_dim=input_features, f_dim=128, h_dim=256, g_dim=1
+            ),
+        )
+
+    def forward(self, x: Tensor) -> Tuple[Tensor, Tensor]:
+        """
+        Args:
+            x (Tensor): [B, num_pieces, num_features]
+
+        Returns:
+            Tensor: [B, num_pieces, 3] - [corner, edge, center]
+        """
+        x = self.fc(x)
+        return x, self.embedding(x.unsqueeze(-2))
+
+
 class Transformer(nn.Module):
     def __init__(
         self,
-        d_model=256,
-        nhead=8,
-        num_encoder_layers=6,
-        num_decoder_layers=6,
-        decoder_dim_feedforward=512,
+        d_model: int,
+        num_encoder_layers: int,
+        num_decoder_layers: int,
+        decoder_dim_feedforward: int,
+        nhead: int = 8,
     ):
         super().__init__()
         # TODO all is args are pretty much arbitrarys: Optimize hyperparameters
@@ -94,14 +122,6 @@ class Transformer(nn.Module):
             norm=nn.LayerNorm(d_model),
         )
 
-        # TODO: try using a single positional embedding, but with different groups: extend rotational embedding to two dimensions!
-        self.spatial_embedding = LearnableFourierFeatures(
-            pos_dim=2, f_dim=128, h_dim=128, d_dim=d_model, g_dim=1
-        )
-        self.rotation_embedding = LearnableFourierFeatures(
-            pos_dim=1, f_dim=64, h_dim=64, d_dim=d_model, g_dim=1
-        )
-
         assert d_model % nhead == 0
         self.decoder = nn.TransformerDecoder(
             nn.TransformerDecoderLayer(
@@ -115,44 +135,26 @@ class Transformer(nn.Module):
             norm=nn.LayerNorm(d_model),  # TODO: Use GroupNorm instead of LayerNorm
         )
 
-    def generate_square_subsequent_mask(
-        self, size: int, device: torch.device
-    ) -> Tensor:
-        mask = torch.triu(
-            torch.ones(size, size, device=device),
-            diagonal=1,
-        )
-        mask[mask == 1] = float("-inf")
-        return mask
-
     def forward(
         self,
-        src: TensorType["B, num_pieces, num_features", torch.float32],
-        pos: Annotated[Tensor, "B, num_pieces, num_features", torch.float32],
+        src: Tensor,
+        pos_encoding: Tensor,
         memory: Optional[Tensor] = None,
     ) -> Tuple[Tensor, Tensor]:
         """
         Args:
             src: Tensor[torch.float32] - (B, num_pieces, num_features)
-            pos: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
+            pos_encoding: Tensor[torch.float32] - (B, num_pieces, num_features) [row_idx, col_idx, rotation]
             memory: Tensor[torch.float32] - (B, num_pieces, num_features)
         Returns:
             Tensor[torch.float32] - (B, num_pieces, num_features)
             Tensor[torch.float32] - (B, num_pieces, num_features)
         """
-        spatial_pos = pos[:, :, :2].unsqueeze(-2)
-        rotation_pos = pos[:, :, 2:].unsqueeze(-2)
-
-        spatial_encoding = self.spatial_embedding(spatial_pos)
-        rotation_encoding = self.rotation_embedding(rotation_pos)
-
         encoder_memory = self.encoder(src) if memory is None else memory
 
-        pos_encoding = spatial_encoding + rotation_encoding
-
         if self.training:
-            tgt_mask = self.generate_square_subsequent_mask(
-                pos_encoding.size(1), pos.device
+            tgt_mask = nn_utils.generate_causal_mask(
+                pos_encoding.size(1), pos_encoding.device
             )
 
         decoder_output = self.decoder(
@@ -173,7 +175,7 @@ class DynamicPuzzleClassifier(nn.Module):
 
         self.fc_rows = nn.Linear(input_features, max_rows)
         self.fc_cols = nn.Linear(input_features, max_cols)
-        # self.fc_pos = nn.Linear(input_features, max_rows * max_cols)
+        # self.fc_pos = nn.Linear(input_features, max_rows * max_cols) TODO: use
         self.fc_rot = nn.Linear(input_features, 4)  # For rotations
 
     def forward(
@@ -193,19 +195,11 @@ class DynamicPuzzleClassifier(nn.Module):
         col_logits = self.fc_cols(x)
         rot_logits = self.fc_rot(x)
 
-        # pos_logits[..., actual_rows * actual_cols :].fill_(float("-inf"))
-
         row_logits[..., actual_rows:].fill_(float("-inf"))
         col_logits[..., actual_cols:].fill_(float("-inf"))
 
         # Concatenate the tensors along a new dimension
         return row_logits, col_logits, rot_logits
-
-
-class LearnableTemperatures(nn.Module):
-    def __init__(self, hparams: HyperParameters):
-        # Use hparams.softmax_temperature and hparams.gumbel_temperature
-        ...
 
 
 class PatchNet(nn.Module):
@@ -228,6 +222,25 @@ class PatchNet(nn.Module):
             nhead=8,
             num_encoder_layers=3,
             num_decoder_layers=3,
+            decoder_dim_feedforward=512,
+        )
+
+        # TODO: try using a single positional embedding, but with different groups: extend rotational embedding to two dimensions!
+        self.spatial_embedding = LearnableFourierFeatures(
+            pos_dim=2, f_dim=128, h_dim=256, d_dim=hparams.num_features_out, g_dim=1
+        )
+        self.rotation_embedding = LearnableFourierFeatures(
+            pos_dim=1, f_dim=2, h_dim=64, d_dim=hparams.num_features_out, g_dim=1
+        )
+
+        # Start and End tokens for the decoder sequence
+        self.start_of_seq_token = nn.Parameter(
+            torch.randn(1, 1, hparams.num_features_out, dtype=torch.float32),
+            requires_grad=True,
+        )
+        self.end_of_seq_token = nn.Parameter(
+            torch.randn(1, 1, hparams.num_features_out, dtype=torch.float32),
+            requires_grad=True,
         )
 
         self.classifier = DynamicPuzzleClassifier(
@@ -236,16 +249,16 @@ class PatchNet(nn.Module):
             max_cols=hparams.puzzle_shape[1],
         )
 
-        # self.hungarian = HungarianNet(max_len=np.prod(hparams.puzzle_shape))
-        # self.temperatures = LearnableTemperatures(hparams)
+        self.puzzle_type_classifier = PuzzleTypeClassifier(hparams.num_features_out)
 
     def forward(
         self, x: Tensor, true_pos_seq: Optional[Tensor] = None
-    ) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
+    ) -> Tuple[Tensor, Tensor, Tuple[Tensor, Tensor, Tensor]]:
         """
         Args:
             x: Tensor[torch.float32] - (B, num_pieces, 3, H, W)
         Returns:
+            puzzle_type_logits: Tensor[torch.float32] - (B, num_pieces, 3) [corner, edge, center]
             pos_seq: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
             logits: Tuple[Tensor[torch.float32], Tensor[torch.float32], Tensor[torch.float32]]
                 row_logits: Tensor[torch.float32] - (B, num_pieces, max_rows)
@@ -253,165 +266,111 @@ class PatchNet(nn.Module):
                 rotation_logits: Tensor[torch.float32] - (B, num_pieces, 4)
         """
         x = self.backbone(x)
+        puzzle_type_logits, puzzle_type_embedding = self.puzzle_type_classifier.forward(
+            x
+        )
+        x = x + puzzle_type_embedding
+
         # TODO: Potential Feature Reduction
         # TODO: create initial positional embedding of shape (num_pieces, 3) [row_idx, col_idx, rotation]
-        pos_seq = (
-            true_pos_seq.clone().to(x)  # type: ignore
-            if self.training
-            else torch.rand(
-                (*x.shape[:-1], 3),
-                device=x.device,
-                dtype=torch.float32,
-                requires_grad=True,
-            )
-        )
 
         if self.training:
-            pos_seq, logits, _ = self._soft_forward_step(x, pos_seq)
+            assert true_pos_seq is not None
+            pos_seq = torch.cat(
+                [
+                    self.start_of_seq_token.expand(x.size(0), 1, -1),
+                    self._embedd_pos_seq(true_pos_seq.clone().to(x)),
+                    self.end_of_seq_token.expand(x.size(0), 1, -1),
+                ],
+                dim=1,
+            )
+            pos_seq, logits = self._soft_forward_step(x, pos_seq)
         else:
-            encoder_memory = None
-            for _ in range(self.hparams.num_decoder_iters):
-                pos_seq, logits, encoder_memory = self._soft_forward_step(
-                    x, pos_seq.to(torch.float32), encoder_memory
-                )
+            pos_seq, logits = self._autoregressive_decode(x)
 
-        # potentially embed unique_indices into x and pass it through the decoder again!
+        def remove_special_tokens(x):
+            if not self.training:
+                return x
+            if isinstance(x, tuple):
+                return tuple(map(remove_special_tokens, x))
+            return x[:, 1:-1, ...]
 
-        return pos_seq, logits
-
-    def _forward_step(
-        self,
-        x: Tensor,
-        pos_seq: Tensor,
-        encoder_memory: Optional[Tensor] = None,
-    ) -> Tuple[Tensor, Tensor, Tensor]:
-        """
-        Args:
-            x: Tensor[torch.float32] - (B, num_pieces, num_features)
-        Returns:
-            pos_seq: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
-            logits: Tuple[Tensor[torch.float32], Tensor[torch.float32], Tensor[torch.float32]]
-            encoder_memory: Tensor[torch.float32] - (B, num_pieces, num_features)
-        """
-        x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
-        logits = self.classifier(x, *self.hparams.puzzle_shape)
-        pos_seq = (
-            torch.stack([torch.argmax(logit, dim=-1) for logit in logits], dim=-1)
-            .to(torch.float32)
-            .to(x.device)
-        )
-
-        return pos_seq, logits, encoder_memory
+        return (puzzle_type_logits, *remove_special_tokens((pos_seq, logits)))  # type: ignore
 
     def _soft_forward_step(
         self, x: Tensor, pos_seq: Tensor, encoder_memory: Optional[Tensor] = None
-    ) -> Tuple[Tensor, Tensor, Tensor]:
+    ) -> Tuple[Tensor, Tensor]:
+
         x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
         logits = self.classifier(x, *self.hparams.puzzle_shape)
 
-        joint_probs = self._compute_joint_probabilities(*logits[:2])
-        joint_logits = self.apply_penalties(joint_probs)
-
-        # Differentiable Hungarian or similar algorithm to get unique assignments  # Make sure to initialize this correctly
-        # assignments, _, _ = self.hungarian(
-        #     flat_joint_probs
-        # )  # Expected shape: [B, num_pieces]
+        joint_probs = nn_utils.compute_joint_probabilities(*logits[:2])
+        joint_logits = nn_utils.apply_penalties(joint_probs)
 
         # Stack the indices to form the final position sequence tensor
         pos_seq = torch.cat(
             [
-                self.softargmax2d(joint_logits),
-                self.softargmax1d(logits[2]).unsqueeze(-1),
+                nn_utils.softargmax2d(joint_logits),
+                nn_utils.softargmax1d(logits[2]).unsqueeze(-1),
             ],
             dim=-1,
         )
 
-        return pos_seq, logits, encoder_memory
+        return pos_seq, logits
 
-    @staticmethod
-    def softargmax1d(input: Tensor, beta=100) -> Tensor:
-        *_, n = input.shape
-        input = F.softmax(beta * input, dim=-1)
-        indices = torch.linspace(0, 1, n, device=input.device)
-        result = torch.sum((n - 1) * input * indices, dim=-1)
-        return result
+    def _embedd_pos_seq(self, pos: Tensor) -> Tensor:
+        spatial_encoding = self.spatial_embedding(pos[:, :, :2].unsqueeze(-2))
+        rotation_encoding = self.rotation_embedding(pos[:, :, 2:].unsqueeze(-2))
 
-    @staticmethod
-    def softargmax2d(input: Tensor, beta=100) -> Tensor:
-        *_, h, w = input.shape
+        return spatial_encoding + rotation_encoding
 
-        input = input.reshape(*_, h * w)
-        input = nn.functional.softmax(beta * input, dim=-1)
+    def _autoregressive_decode(
+        self, x: Tensor
+    ) -> Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]]:
+        B, L, _F = x.shape
+        pos_seq = torch.cat([self.start_of_seq_token.expand(B, 1, -1)], dim=1)
+        encoder_memory = None
 
-        indices_c, indices_r = torch.meshgrid(
-            torch.linspace(0, 1, w, device=input.device),
-            torch.linspace(0, 1, h, device=input.device),
+        logits_list: list[tuple[Tensor, Tensor, Tensor]] = []
+        for _token in range(L):
+            decoder_output, encoder_memory = self.transformer(
+                x, pos_seq, encoder_memory
+            )
+            logits = self.classifier(
+                decoder_output[:, -1, :], *self.hparams.puzzle_shape
+            )
+            row_logits, col_logits, rot_logits = logits
+            logits_list.append(logits)
+
+            # Compute joint probabilities and apply penalties
+            if row_logits.dim() == 2:
+                row_logits = row_logits.unsqueeze(1)
+                col_logits = col_logits.unsqueeze(1)
+                rot_logits = rot_logits.unsqueeze(1)
+            joint_probs = nn_utils.compute_joint_probabilities(row_logits, col_logits)
+
+            # Find the next token using the adjusted joint probabilities
+            next_token = torch.cat(
+                [
+                    nn_utils.argmax2d(joint_probs),
+                    torch.argmax(rot_logits, dim=-1, keepdim=True),
+                ],
+                dim=-1,
+            ).to(torch.float32)
+
+            pos_seq = torch.cat([pos_seq, self._embedd_pos_seq(next_token)], dim=1)
+
+        # Stack the logits along the sequence length dimension and compute the final position
+        logits = tuple(torch.stack(t, dim=1) for t in zip(*logits_list))
+        row_logits, col_logits, _ = logits
+        joint_probs = nn_utils.compute_joint_probabilities(row_logits, col_logits)
+        joint_probs = nn_utils.apply_penalties(joint_probs)
+        pos_seq = torch.cat(
+            [
+                nn_utils.softargmax2d(joint_probs),
+                nn_utils.softargmax1d(logits[2]).unsqueeze(-1),
+            ],
+            dim=-1,
         )
 
-        indices_r = indices_r.reshape(-1, h * w)
-        indices_c = indices_c.reshape(-1, h * w)
-
-        result_r = torch.sum((h - 1) * input * indices_r, dim=-1)
-        result_c = torch.sum((w - 1) * input * indices_c, dim=-1)
-
-        result = torch.stack([result_r, result_c], dim=-1)
-
-        return result
-
-    def apply_penalties(self, joint_probs: Tensor) -> Tensor:
-        """
-        Aims to penalize high probabilities for the same coordinates
-        Args:
-            joint_probs: Tensor [B, L, num_rows, num_cols] of Joint Probabilities.
-
-
-        Case distinctions:
-            - max_per_class & max_per_token -> assign
-            - ~max_per_class & max_per_token -> penalize, subsidize others
-            - max_per_class & ~max_per_token -> subsidize
-        """
-        flat_probs = joint_probs.view(*joint_probs.shape[:2], -1)
-        max_probs_per_token, _ = flat_probs.max(dim=1, keepdim=True)
-        max_probs_per_class, _ = flat_probs.max(dim=-1, keepdim=True)
-
-        max_per_token = (flat_probs == max_probs_per_token).float()
-        max_per_class = (flat_probs == max_probs_per_class).float()
-
-        # Apply a dynamic penalty for non-max elements and a boost for max elements where they aren't the max token-wise
-        # Penalizes non-max tokens
-        penalties = (
-            (1 - max_per_class)
-            * max_per_token
-            * ((max_probs_per_class - flat_probs) / max_probs_per_class)
-        )
-        # Boost max-class elements that are not max-token
-        incentives = (
-            (1 - max_per_token)
-            * max_per_class
-            * ((max_probs_per_token - flat_probs) / max_probs_per_token)
-        )
-
-        adjusted_probs = flat_probs * (1 + incentives - penalties)
-
-        return (
-            (adjusted_probs + torch.finfo(torch.float32).eps).log().softmax(-1)
-        ).view_as(joint_probs)
-
-    def _compute_joint_probabilities(
-        self, row_logits: Tensor, col_logits: Tensor
-    ) -> Tensor:
-        """
-        Args:
-            row_logits (Tensor[B, num_pieces, num_rows])
-            col_logits (Tensor[B, num_pieces, num_cols])
-
-        Returns:
-            Tensor[B, num_pieces, num_rows, num_cols]: Joint probabilities
-        """
-        # Compute probabilities within each token over all classes
-        row_probs = F.softmax(row_logits, dim=-1)
-        col_probs = F.softmax(col_logits, dim=-1)
-
-        joint_probs = row_probs[:, :, :, None] * col_probs[:, :, None, :]
-
-        return joint_probs
+        return pos_seq, logits
