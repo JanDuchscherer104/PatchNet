@@ -231,12 +231,13 @@ class HyperParameters(YamlBaseModel):
     # PATCH-NET
     num_features_out: int = 768
     backbone_is_trainable: bool = False
-    num_decoder_iters: int = 8
+    num_decoder_iters: int = 4
 
     # Loss Related
     is_norm_costs: bool = True
-    w_mse_loss: float = 1.25
-    w_ce_rot_loss: float = 0.5
-    w_ce_pos_loss: float = 0.5
-    w_unique_loss: float = 2
-    unique_cost_sigma: float = 0.52
+    w_mse_loss: float = 4
+    w_ce_rot_loss: float = 1
+    w_ce_pos_loss: float = 1
+    w_ce_type_loss: float = 1
+    w_unique_loss: float = 1.5
+    unique_cost_sigma: float = 0.5
