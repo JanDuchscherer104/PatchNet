@@ -62,7 +62,11 @@
 - Implement a custom loss function that penalizes overlapping placements more severely.
 - Use a permutation-invariant loss function. [Hungarian loss](https://en.wikipedia.org/wiki/Hungarian_algorithm) could possibly be adapted!
 - We need to optimize for the joint probability of the entire sequence rather than optimizing all tokens individually.
-
+- Add another objective: Predict the wether a piece is a:
+    - border piece
+    - corner piece
+    - inner piece
+  and embed this information into the Transformer decoder.
 
 - Embedding of the original sizes of each piece, since we are cropping and resizing the pieces.
 
