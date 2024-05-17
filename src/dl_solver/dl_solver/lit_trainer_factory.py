@@ -3,16 +3,12 @@ from typing import Any, Callable, Dict, List, Literal, Tuple
 from warnings import warn
 
 import mlflow
+import torch
 from pytorch_lightning import Callback, LightningModule, Trainer
-from pytorch_lightning.callbacks import (
-    BatchSizeFinder,
-    Callback,
-    EarlyStopping,
-    LearningRateMonitor,
-    ModelCheckpoint,
-    ModelSummary,
-    TQDMProgressBar,
-)
+from pytorch_lightning.callbacks import (BatchSizeFinder, Callback,
+                                         EarlyStopping, LearningRateMonitor,
+                                         ModelCheckpoint, ModelSummary,
+                                         TQDMProgressBar)
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 
@@ -42,6 +38,8 @@ class TrainerFactory:
             config.is_multiproc = False
             config.verbose = True
             config.is_mlflow = False
+            hparams.batch_size = 8
+            torch.autograd.set_detect_anomaly(True)
 
             config.active_callbacks["ModelCheckpoint"] = False
         elif config.is_mlflow:

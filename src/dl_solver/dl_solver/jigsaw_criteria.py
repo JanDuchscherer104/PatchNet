@@ -10,6 +10,7 @@ from .config import Config, HyperParameters
 
 
 class Losses(TypedDict):
+    ce_type: Tensor  # dtype: torch.float32, shape: scalar
     ce_row: Tensor  # dtype: torch.float32, shape: scalar
     ce_col: Tensor  # dtype: torch.float32, shape: scalar
     ce_rot: Tensor  # dtype: torch.float32, shape: scalar
@@ -19,6 +20,7 @@ class Losses(TypedDict):
 
 
 class Accuracies(TypedDict):
+    type_accuracy: Tensor  # dtype: torch.float32, shape: scalar
     row_accuracy: Tensor  # dtype: torch.float32, shape: scalar
     col_accuracy: Tensor  # dtype: torch.float32, shape: scalar
     rot_accuracy: Tensor  # dtype: torch.float32, shape: scalar
@@ -71,7 +73,7 @@ class JigsawCriteria(nn.Module):
 
     def compute_loss(
         self,
-        y_pred: Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]],
+        y_pred: Tuple[Tensor, Tensor, Tuple[Tensor, Tensor, Tensor]],
         y: Tensor,
     ) -> Losses:
         """
@@ -79,6 +81,7 @@ class JigsawCriteria(nn.Module):
 
         Args:
             y_pred: a tuple containing
+                puzzle_type_logits: Tensor[torch.float32] - (B, num_pieces, 3) [corner, edge, center]
                 pos_seq: Tensor[torch.float32] - (B, num_pieces, 3) [row_idx, col_idx, rotation]
                 logits: Tuple[Tensor[torch.float32], Tensor[torch.float32], Tensor[torch.float32]]
                     row_logits: Tensor[torch.float32] - (B, num_pieces, max_rows)
@@ -102,10 +105,17 @@ class JigsawCriteria(nn.Module):
         >>> unique_loss
         tensor(2.)
         """
-        pos_seq, (row_logits, col_logits, rot_logits) = y_pred
+        puzzle_type_logits, pos_seq, (row_logits, col_logits, rot_logits) = y_pred
 
-        # Unpack true values, calculate MSE loss for row / col indices
+        # Unpack true values
         y_rows, y_cols, y_rot = y[..., 0], y[..., 1], y[..., 2]
+
+        self.y_puzzle_type = self.get_puzzle_type_labels(y_rows, y_cols)
+        ce_loss_type = self.ce_loss(
+            puzzle_type_logits.permute(0, 2, 1), self.y_puzzle_type
+        )
+
+        # Calculate MSE loss for row / col indices
         mse_loss_position = self.mse_loss(pos_seq[..., :2], y[..., :2].float())
 
         # Uniqeness Loss
@@ -116,31 +126,16 @@ class JigsawCriteria(nn.Module):
         ce_loss_cols = self.ce_loss(col_logits.permute(0, 2, 1), y_cols)
         ce_loss_rot = self.ce_loss(rot_logits.permute(0, 2, 1), y_rot)
 
-        if self.hparams.is_norm_costs:
-            norm_mse_loss = mse_loss_position / torch.tensor(
-                self.loss_means["mse_loss_pos"]
-            ).to(mse_loss_position)
-            norm_unique_loss = unique_loss / torch.tensor(
-                self.loss_means["unique_loss"]
-            ).to(unique_loss)
-            norm_ce_loss_rows = ce_loss_rows / torch.tensor(
-                self.loss_means["ce_loss_row"]
-            ).to(ce_loss_rows)
-            norm_ce_loss_cols = ce_loss_cols / torch.tensor(
-                self.loss_means["ce_loss_col"]
-            ).to(ce_loss_cols)
-            norm_ce_loss_rot = ce_loss_rot / torch.tensor(
-                self.loss_means["ce_loss_rot"]
-            ).to(ce_loss_rot)
-
         total_loss = (
-            (norm_ce_loss_rows + norm_ce_loss_cols) * self.hparams.w_ce_pos_loss
-            + norm_ce_loss_rot * self.hparams.w_ce_rot_loss
-            + norm_mse_loss * self.hparams.w_mse_loss
-            + norm_unique_loss * self.hparams.w_unique_loss
+            (ce_loss_rows + ce_loss_cols) * self.hparams.w_ce_pos_loss
+            + ce_loss_rot * self.hparams.w_ce_rot_loss
+            + mse_loss_position * self.hparams.w_mse_loss
+            + unique_loss * self.hparams.w_unique_loss
+            + ce_loss_type * self.hparams.w_ce_type_loss
         )
 
         return Losses(
+            ce_type=ce_loss_type,
             ce_row=ce_loss_rows,
             ce_col=ce_loss_cols,
             ce_rot=ce_loss_rot,
@@ -148,6 +143,22 @@ class JigsawCriteria(nn.Module):
             unique=unique_loss,
             total_loss=total_loss,
         )
+
+    def get_puzzle_type_labels(self, rows: Tensor, cols: Tensor) -> Tensor:
+        """
+        Generate the puzzle type labels based on the positions.
+        """
+        num_rows, num_cols = self.hparams.puzzle_shape
+        is_corner = (
+            (rows == 0) | (rows == num_rows - 1) & (cols == 0) | (cols == num_cols - 1)
+        )
+        is_edge = (
+            (rows == 0) | (rows == num_rows - 1) | (cols == 0) | (cols == num_cols - 1)
+        )
+        puzzle_type = torch.full_like(rows, 2)  # Initialize with center type
+        puzzle_type[is_corner] = 0
+        puzzle_type[is_edge & ~is_corner] = 1
+        return puzzle_type
 
     def soft_unique_penalty(self, positions: Tensor) -> Tensor:
         """
@@ -180,14 +191,14 @@ class JigsawCriteria(nn.Module):
 
     def forward(
         self,
-        y_pred: Tuple[Tensor, Tuple[Tensor, Tensor, Tensor]],
+        y_pred: Tuple[Tensor, Tensor, Tuple[Tensor, Tensor, Tensor]],
         y: Tensor,
         step_idx: int,
         stage: Literal["fit", "validate", "test"],
     ) -> Criteria:
         losses = self.compute_loss(y_pred, y)
         accuracies, rounded_preds = self.fetch_rounded_preds_and_compute_accuracy(
-            y_pred[0], y
+            y_pred[:2], y
         )
 
         if stage == "fit":
@@ -199,6 +210,7 @@ class JigsawCriteria(nn.Module):
 
     def detach_losses(self, losses: Losses) -> Losses:
         return Losses(
+            ce_type=losses["ce_type"].clone().detach().cpu().item(),
             ce_row=losses["ce_row"].clone().detach().cpu().item(),
             ce_col=losses["ce_col"].clone().detach().cpu().item(),
             ce_rot=losses["ce_rot"].clone().detach().cpu().item(),
@@ -217,9 +229,13 @@ class JigsawCriteria(nn.Module):
         self.loss_stds.update(current_stds)
 
     def fetch_rounded_preds_and_compute_accuracy(
-        self, y_pred: Tensor, y: Tensor
+        self, y_pred_tup: Tuple[Tensor, Tensor], y: Tensor
     ) -> Tuple[Accuracies, RoundedPreds]:
-        y_pred = y_pred.clone().detach().round()
+        y_pred_type_logits, y_pred = [t.clone().detach().round() for t in y_pred_tup]
+
+        puzzle_type_accuracy = self.y_puzzle_type == y_pred_type_logits.argmax(dim=-1)
+        self.y_puzzle_type = None
+
         row_preds, col_preds, rot_preds = (
             y_pred[..., 0],
             y_pred[..., 1],
@@ -239,6 +255,7 @@ class JigsawCriteria(nn.Module):
 
         return (
             Accuracies(
+                type_accuracy=puzzle_type_accuracy.float().mean(),
                 row_accuracy=correct_rows.float().mean(),
                 col_accuracy=correct_cols.float().mean(),
                 rot_accuracy=correct_rots.float().mean(),

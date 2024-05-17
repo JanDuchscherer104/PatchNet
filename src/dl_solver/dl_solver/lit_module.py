@@ -7,10 +7,12 @@ import pytorch_lightning as pl
 import torch
 from matplotlib import pyplot as plt
 from torch import Tensor
-from torch.optim.lr_scheduler import ReduceLROnPlateau
+from torch.optim import AdamW
+from torch.optim.lr_scheduler import CyclicLR, ReduceLROnPlateau
 
 from .config import Config, HyperParameters
 from .jigsaw_criteria import JigsawCriteria, RoundedPreds
+from .lr_scheduler import HybridScheduler
 from .patchnet import PatchNet
 
 
@@ -52,7 +54,7 @@ class LitJigsawModule(pl.LightningModule):
         if self.config.is_gpu:
             if (model_device := self.model.parameters().__next__().device) != (
                 device := self.device
-            ) or model_device != torch.device("cuda"):
+            ) or model_device != torch.device("cuda:0"):
                 warn(
                     f"Model device: {model_device} is different from LightningModule device: {device}."
                 )
@@ -207,45 +209,48 @@ class LitJigsawModule(pl.LightningModule):
         #     A tuple containing the optimizer and a lr_scheduler config.
 
         # Optimizer setup with different learning rates for different model components
-        classifier_params = set(self.model.backbone.backbone.classifier.parameters())
-        backbone_params = [
-            param
-            for param in self.model.backbone.backbone.parameters()
-            if param not in classifier_params
-        ]
 
-        optimizer = torch.optim.AdamW(
+        # Define parameter groups
+        backbone_classifier_params = list(
+            self.model.backbone.backbone.classifier.parameters()
+        )
+        # backbone_params = [
+        #     param
+        #     for param in self.model.backbone.backbone.parameters()
+        #     if param not in set(backbone_classifier_params)
+        # ]
+        transformer_params = list(self.model.transformer.parameters())
+        classifier_head_params = list(self.model.classifier.parameters())
+
+        # Define a single optimizer for all parameters
+        optimizer = AdamW(
             [
-                {"params": backbone_params, "lr": self.hparams.lr_backbone},
+                # {"params": backbone_params, "lr": self.hparams.lr_backbone},
                 {
-                    "params": self.model.backbone.backbone.classifier.parameters(),
+                    "params": backbone_classifier_params,
                     "lr": self.hparams.lr_classifier,
                 },
-                {
-                    "params": self.model.transformer.parameters(),
-                    "lr": self.hparams.lr_transformer,
-                },
-                {
-                    "params": self.model.classifier.parameters(),
-                    "lr": self.hparams.lr_classifier,
-                },
-            ],
-            weight_decay=self.hparams.weight_decay,
+                {"params": transformer_params, "lr": self.hparams.lr_transformer},
+                {"params": classifier_head_params, "lr": self.hparams.lr_classifier},
+            ]
         )
 
-        # Scheduler setup
-        lr_scheduler_config = {
-            "scheduler": ReduceLROnPlateau(
-                optimizer, mode="min", factor=0.1, patience=3, verbose=True
-            ),
-            "interval": "epoch",
-            "monitor": "val_loss",
-            "frequency": 1,
-        }
+        # Combine the schedulers using the custom scheduler
+        custom_scheduler = HybridScheduler(
+            optimizer,
+            step_size=len(self.trainer.datamodule.train_dataloader()) // 2,
+            monitor="train-loss/mse_pos",
+            patience=20,
+        )
 
         return {
             "optimizer": optimizer,
-            "lr_scheduler": lr_scheduler_config,
+            "lr_scheduler": {
+                "scheduler": custom_scheduler,
+                "interval": "step",
+                "frequency": 1,
+                "monitor": "train-loss/mse_pos",
+            },
         }
 
     def make_graph(self, xy: Tuple[Tensor, Tensor]) -> None:
