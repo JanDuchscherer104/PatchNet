@@ -1,5 +1,6 @@
+import numpy as np
 import torch
-import torch.nn as nn
+from scipy import optimize
 from torch import Tensor
 from torch.functional import F
 
@@ -78,7 +79,7 @@ class nn_utils:
         *_, h, w = input.shape
 
         input = input.reshape(*_, h * w)
-        input = nn.functional.softmax(beta * input, dim=-1)
+        input = F.softmax(beta * input, dim=-1)
 
         indices_c, indices_r = torch.meshgrid(
             torch.linspace(0, 1, w, device=input.device),
@@ -116,10 +117,82 @@ class nn_utils:
         return torch.stack([row_indices, col_indices], dim=-1)
 
     @staticmethod
-    def generate_causal_mask(size: int, device: torch.device) -> Tensor:
-        mask = torch.triu(
-            torch.ones(size, size, device=device),
-            diagonal=1,
-        )
-        mask[mask == 1] = float("-inf")
-        return mask
+    def linear_sum_assignment(joint_probs: Tensor) -> Tensor:
+        """
+        Computes the linear sum assignment for the joint probabilities.
+
+        Args:
+            joint_probs (Tensor['B, L, num_rows, num_cols']) of Joint Probabilities.
+
+        Returns:
+            Tensor [B, L, 2] - Indices for rows and columns
+        """
+        with torch.no_grad():
+            B, L, H, W = joint_probs.shape
+            flat_probs = joint_probs.view(B, L, H * W)
+
+            cost_matrices = -flat_probs.log().cpu().numpy()
+
+            row_indices = torch.zeros(B, L, dtype=torch.long, device="cpu")
+            col_indices = torch.zeros(B, L, dtype=torch.long, device="cpu")
+
+            for b in range(B):
+                row_ind, col_ind = optimize.linear_sum_assignment(cost_matrices[b])
+                row_indices[b, torch.from_numpy(row_ind)] = (
+                    torch.from_numpy(col_ind) // W
+                )
+                col_indices[b, torch.from_numpy(row_ind)] = (
+                    torch.from_numpy(col_ind) % W
+                )
+
+            return torch.stack((row_indices, col_indices), dim=-1).to(flat_probs)
+
+
+if __name__ == "__main__":
+    import unittest
+
+    import torch
+    from torch import Tensor
+
+    class TestLinearSumAssignment(unittest.TestCase):
+
+        def test_linear_sum_assignment(self):
+            """
+            Test for the linear_sum_assignment function.
+            """
+            joint_probs = torch.tensor(
+                [
+                    [
+                        [[0.8, 0.2], [0.3, 0.7]],
+                        [[0.6, 0.4], [0.5, 0.5]],
+                        [[0.4, 0.6], [0.2, 0.8]],
+                        [[0.9, 0.1], [0.1, 0.9]],
+                    ],
+                    [
+                        [[0.1, 0.9], [0.4, 0.6]],
+                        [[0.3, 0.7], [0.5, 0.5]],
+                        [[0.8, 0.2], [0.6, 0.4]],
+                        [[0.9, 0.1], [0.7, 0.3]],
+                    ],
+                ]
+            )  # Example joint probabilities (B, L, H, W)
+
+            indices = nn_utils.linear_sum_assignment(joint_probs)
+
+            # Check the shape of the output
+            self.assertEqual(indices.shape, (2, 4, 2))
+
+            # Check if the values are within the expected range
+            self.assertTrue((indices >= 0).all())
+            self.assertTrue(
+                (indices < 2).all()
+            )  # Since H and W are 2, valid indices are in the range [0, 1]
+
+            # Check the uniqueness constraint
+            for b in range(indices.shape[0]):
+                unique_rows = indices[b, :, 0].unique()
+                unique_cols = indices[b, :, 1].unique()
+                self.assertEqual(len(unique_rows), 2)  # Since H is 2
+                self.assertEqual(len(unique_cols), 2)  # Since W is 2
+
+    unittest.main()

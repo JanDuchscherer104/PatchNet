@@ -99,7 +99,7 @@ class Transformer(nn.Module):
                 nhead=hparams.nhead,
                 batch_first=True,
                 dim_feedforward=hparams.dim_feedforward,
-                activation=F.silu,
+                activation=F.gelu,
             ),
             num_layers=hparams.num_encoder_layers,
             norm=nn.LayerNorm(hparams.d_model),
@@ -111,7 +111,7 @@ class Transformer(nn.Module):
                 nhead=hparams.nhead,
                 batch_first=True,
                 dim_feedforward=hparams.dim_feedforward,
-                activation=F.silu,
+                activation=F.gelu,
             ),
             num_layers=hparams.num_decoder_layers,
             norm=nn.LayerNorm(hparams.d_model),
@@ -165,7 +165,7 @@ class DynamicIdxClassifier(nn.Module):
 
         self.fc_rows = nn.Linear(hparams.input_features, self.max_rows)
         self.fc_cols = nn.Linear(hparams.input_features, self.max_cols)
-        self.fc_rot = nn.Linear(hparams.input_features, 4)  # For rotations
+        self.fc_rot = nn.Linear(hparams.input_features, 4)
 
     def forward(
         self, x: Tensor, actual_rows: int, actual_cols: int
@@ -257,14 +257,7 @@ class PatchNet(nn.Module):
         else:
             pos_seq, logits = self._autoregressive_decode(x)
 
-        def remove_sart_token(x):
-            if not self.training:
-                return x
-            if isinstance(x, tuple):
-                return tuple(map(remove_sart_token, x))
-            return x[:, 1:, ...]
-
-        return (puzzle_type_logits, *remove_sart_token((pos_seq, logits)))  # type: ignore
+        return puzzle_type_logits, pos_seq, logits
 
     def _soft_forward_step(
         self, x: Tensor, pos_seq: Tensor, encoder_memory: Optional[Tensor] = None
@@ -282,7 +275,8 @@ class PatchNet(nn.Module):
                 - Tensor['B num_pieces num_features_out', float32]: Position sequence tensor
                 - Tensor['B num_pieces num_features_out', float32]: Logits tensor
         """
-        x, encoder_memory = self.transformer(x, pos_seq, encoder_memory)
+        x, encoder_memory = self.transformer.forward(x, pos_seq, encoder_memory)
+        x = x[:, 1:, :]
         logits = self.classifier(x, *self.hparams.puzzle_shape)
 
         joint_probs = nn_utils.compute_joint_probabilities(*logits[:2])
@@ -324,6 +318,8 @@ class PatchNet(nn.Module):
         encoder_memory = None
 
         logits_list: list[tuple[Tensor, Tensor, Tensor]] = []
+        joint_probs_list: list[Tensor] = []
+
         for _token in range(L):
             decoder_output, encoder_memory = self.transformer(
                 x, pos_seq, encoder_memory
@@ -334,17 +330,21 @@ class PatchNet(nn.Module):
             row_logits, col_logits, rot_logits = logits
             logits_list.append(logits)
 
-            # Compute joint probabilities and apply penalties
+            # Compute joint probabilities
             if row_logits.dim() == 2:
                 row_logits = row_logits.unsqueeze(1)
                 col_logits = col_logits.unsqueeze(1)
                 rot_logits = rot_logits.unsqueeze(1)
-            joint_probs = nn_utils.compute_joint_probabilities(row_logits, col_logits)
+            joint_probs_list.append(
+                nn_utils.compute_joint_probabilities(row_logits, col_logits)
+            )
 
-            # Find the next token using the adjusted joint probabilities
+            # Use linear sum assignment for the next token
             next_token = torch.cat(
                 [
-                    nn_utils.argmax2d(joint_probs),
+                    nn_utils.linear_sum_assignment(torch.cat(joint_probs_list, dim=1))[
+                        :, -1:, :
+                    ],
                     torch.argmax(rot_logits, dim=-1, keepdim=True),
                 ],
                 dim=-1,
@@ -354,13 +354,13 @@ class PatchNet(nn.Module):
 
         # Stack the logits along the sequence length dimension and compute the final position
         logits = tuple(torch.stack(t, dim=1) for t in zip(*logits_list))
-        row_logits, col_logits, _ = logits
+        row_logits, col_logits, rot_logits = logits
         joint_probs = nn_utils.compute_joint_probabilities(row_logits, col_logits)
         joint_probs = nn_utils.apply_penalties(joint_probs)
         pos_seq = torch.cat(
             [
-                nn_utils.softargmax2d(joint_probs),
-                nn_utils.softargmax1d(logits[2]).unsqueeze(-1),
+                nn_utils.linear_sum_assignment(joint_probs),
+                torch.argmax(rot_logits, dim=-1, keepdim=True),
             ],
             dim=-1,
         )
