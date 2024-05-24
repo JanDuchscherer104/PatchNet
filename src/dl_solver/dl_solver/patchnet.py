@@ -135,17 +135,15 @@ class Transformer(nn.Module):
         """
         encoder_memory = self.encoder.forward(src_seq) if memory is None else memory
 
-        tgt_mask = None
-        if self.training:
-            tgt_mask = nn.Transformer.generate_square_subsequent_mask(
-                tgt_seq.size(1), device=tgt_seq.device
-            )
+        tgt_mask = nn.Transformer.generate_square_subsequent_mask(
+            tgt_seq.size(1), device=tgt_seq.device
+        )
 
         decoder_output = self.decoder.forward(
             tgt=tgt_seq,
             memory=encoder_memory,
             tgt_mask=tgt_mask,
-            tgt_is_causal=self.training,
+            tgt_is_causal=True,
         )
 
         return decoder_output, encoder_memory
@@ -249,7 +247,7 @@ class PatchNet(nn.Module):
             pos_seq = torch.cat(
                 [
                     self.start_of_seq_token.expand(x.size(0), 1, -1),
-                    self._embedd_pos_seq(true_pos_seq.clone().to(x)),
+                    self._embedd_pos_seq(true_pos_seq[:, :-1, :].clone().to(x)),
                 ],
                 dim=1,
             )
@@ -276,7 +274,6 @@ class PatchNet(nn.Module):
                 - Tensor['B num_pieces num_features_out', float32]: Logits tensor
         """
         x, encoder_memory = self.transformer.forward(x, pos_seq, encoder_memory)
-        x = x[:, 1:, :]
         logits = self.classifier(x, *self.hparams.puzzle_shape)
 
         joint_probs = nn_utils.compute_joint_probabilities(*logits[:2])
@@ -318,7 +315,6 @@ class PatchNet(nn.Module):
         encoder_memory = None
 
         logits_list: list[tuple[Tensor, Tensor, Tensor]] = []
-        joint_probs_list: list[Tensor] = []
 
         for _token in range(L):
             decoder_output, encoder_memory = self.transformer(
@@ -335,20 +331,16 @@ class PatchNet(nn.Module):
                 row_logits = row_logits.unsqueeze(1)
                 col_logits = col_logits.unsqueeze(1)
                 rot_logits = rot_logits.unsqueeze(1)
-            joint_probs_list.append(
-                nn_utils.compute_joint_probabilities(row_logits, col_logits)
-            )
+            joint_probs = nn_utils.compute_joint_probabilities(row_logits, col_logits)
 
             # Use linear sum assignment for the next token
             next_token = torch.cat(
                 [
-                    nn_utils.linear_sum_assignment(torch.cat(joint_probs_list, dim=1))[
-                        :, -1:, :
-                    ],
-                    torch.argmax(rot_logits, dim=-1, keepdim=True),
+                    nn_utils.softargmax2d(joint_probs),
+                    nn_utils.softargmax1d(rot_logits).unsqueeze(-1),
                 ],
                 dim=-1,
-            ).to(torch.float32)
+            )
 
             pos_seq = torch.cat([pos_seq, self._embedd_pos_seq(next_token)], dim=1)
 
@@ -359,8 +351,8 @@ class PatchNet(nn.Module):
         joint_probs = nn_utils.apply_penalties(joint_probs)
         pos_seq = torch.cat(
             [
-                nn_utils.linear_sum_assignment(joint_probs),
-                torch.argmax(rot_logits, dim=-1, keepdim=True),
+                nn_utils.softargmax2d(joint_probs),
+                nn_utils.softargmax1d(rot_logits).unsqueeze(-1),
             ],
             dim=-1,
         )

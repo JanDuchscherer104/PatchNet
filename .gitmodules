@@ -4,3 +4,6 @@
 [submodule "src/dl_solver/lib/Learnable-Fourier-Features"]
 	path = src/dl_solver/lib/Learnable-Fourier-Features
 	url = git@github.com:JHLew/Learnable-Fourier-Features.git
+[submodule "lib/torch-linear-assignment"]
+	path = lib/torch-linear-assignment
+	url = git@github.com:ivan-chai/torch-linear-assignment.git
