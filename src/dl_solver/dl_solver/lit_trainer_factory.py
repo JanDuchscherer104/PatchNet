@@ -1,18 +1,26 @@
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Literal, Tuple
+from typing import Any, Callable, Dict, List, Literal, Optional, Tuple
 from warnings import warn
 
 import mlflow
 import torch
+from optuna.trial import Trial
+from optuna_integration import PyTorchLightningPruningCallback
 from pytorch_lightning import Callback, LightningModule, Trainer
-from pytorch_lightning.callbacks import (BatchSizeFinder, Callback,
-                                         EarlyStopping, LearningRateMonitor,
-                                         ModelCheckpoint, ModelSummary,
-                                         TQDMProgressBar)
+from pytorch_lightning.callbacks import (
+    BatchSizeFinder,
+    Callback,
+    EarlyStopping,
+    LearningRateMonitor,
+    ModelCheckpoint,
+    ModelSummary,
+    TQDMProgressBar,
+)
 from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.utilities.types import STEP_OUTPUT
 
-from .config import Config, HyperParameters
+from .config import Config
+from .hparams import HParams
 from .lit_datamodule import LitJigsawDatamodule
 from .lit_module import LitJigsawModule
 
@@ -22,14 +30,22 @@ class TrainerFactory:
     def create_trainer(
         cls,
         config: Config,
-        hparams: HyperParameters,
+        hparams: HParams,
+        trial: Optional[Trial],
         **trainer_kwargs,
     ) -> Trainer:
         """Create and initialize Callback instances."""
-        factory_instance = cls(config, hparams)
+        assert isinstance(trial, Trial) == config.is_optuna
+
+        torch.set_float32_matmul_precision(config.matmul_precision)
+
+        factory_instance = cls(config, hparams, trial)
 
         callbacks = factory_instance._assemble_callbacks()
         tb_logger = factory_instance._assemble_loggers()
+
+        if config.is_optuna:
+            config.active_callbacks["OptunaPruning"] = True
 
         if config.is_debug:
             config.is_gpu = False
@@ -38,29 +54,29 @@ class TrainerFactory:
             config.is_multiproc = False
             config.verbose = True
             config.is_mlflow = False
-            hparams.batch_size = 8
+            hparams.optimizer.batch_size = 8
             torch.autograd.set_detect_anomaly(True)
 
             config.active_callbacks["ModelCheckpoint"] = False
-        elif config.is_mlflow:
-            mlflow.pytorch.autolog(
-                log_every_n_epoch=1,
-                log_every_n_step=None,
-                log_models=True,
-                log_datasets=False,
-                disable=False,
-                exclusive=False,
-                disable_for_unsupported_versions=False,
-                silent=False,
-                registered_model_name=None,
-                extra_tags=None,
-                checkpoint=True,
-                checkpoint_monitor="val_loss",
-                checkpoint_mode="min",
-                checkpoint_save_best_only=True,
-                checkpoint_save_weights_only=False,
-                checkpoint_save_freq="epoch",
-            )
+        # elif config.is_mlflow:
+        #     mlflow.pytorch.autolog(
+        #         log_every_n_epoch=1,
+        #         log_every_n_step=None,
+        #         log_models=True,
+        #         log_datasets=False,
+        #         disable=False,
+        #         exclusive=False,
+        #         disable_for_unsupported_versions=False,
+        #         silent=False,
+        #         registered_model_name=None,
+        #         extra_tags=None,
+        #         checkpoint=True,
+        #         checkpoint_monitor="val_loss",
+        #         checkpoint_mode="min",
+        #         checkpoint_save_best_only=True,
+        #         checkpoint_save_weights_only=False,
+        #         checkpoint_save_freq="epoch",
+        #     )
 
         # Create Trainer
         return Trainer(
@@ -79,12 +95,13 @@ class TrainerFactory:
     def create_all(
         cls,
         config: Config,
-        hparams: HyperParameters,
+        hparams: HParams,
         setup: List[Literal["fit", "validate", "test"]] = ["fit", "validate"],
+        trial: Optional[Trial] = None,
         **trainer_kwargs,
     ) -> Tuple[Trainer, LitJigsawModule, LitJigsawDatamodule]:
         """Create and initialize Callback instances."""
-        trainer = cls.create_trainer(config, hparams, **trainer_kwargs)
+        trainer = cls.create_trainer(config, hparams, trial, **trainer_kwargs)
         if isinstance(config.from_ckpt, Path):
             print(f"Loading model from checkpoint: {config.from_ckpt}")
             lit_module = LitJigsawModule.load_from_checkpoint(
@@ -111,16 +128,19 @@ class TrainerFactory:
             "BatchSizeFinder": self._create_batch_size_finder,
             "LearningRateMonitor": self._create_lr_monitor,
             "ModelSummary": self._create_model_summary,
+            "OptunaPruning": self._create_optuna_pruning,
         }
 
     def __init__(
         self,
         config: Config,
-        hparams: HyperParameters,
+        hparams: HParams,
+        trial: Optional[Trial] = None,
     ):
         """Private constructor to set config and hyper_params."""
         self.config = config
         self.hparams = hparams
+        self.trial = trial
 
     def _create_model_checkpoint(self):
         return ModelCheckpoint(
@@ -144,6 +164,13 @@ class TrainerFactory:
             mode="min",
         )
 
+    def _create_optuna_pruning(self):
+        if self.trial is not None:
+            return PyTorchLightningPruningCallback(
+                trial=self.trial,
+                monitor=self.config.optuna_config.monitor,
+            )
+
     def _create_model_summary(self):
         return ModelSummary(max_depth=4)
 
@@ -151,7 +178,7 @@ class TrainerFactory:
         return BatchSizeFinder(
             mode="binsearch",
             steps_per_trial=3,
-            init_val=self.hparams.batch_size,
+            init_val=self.hparams.optimizer.batch_size,
             max_trials=25,
             batch_arg_name="batch_size",
         )
